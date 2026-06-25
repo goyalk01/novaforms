@@ -1,0 +1,10 @@
+ALTER TABLE form_configs ADD COLUMN status VARCHAR(255) DEFAULT 'DRAFT';
+ALTER TABLE form_configs ADD COLUMN published BOOLEAN DEFAULT FALSE;
+ALTER TABLE form_configs ADD COLUMN published_at TIMESTAMP;
+ALTER TABLE form_configs ADD COLUMN open_at TIMESTAMP;
+ALTER TABLE form_configs ADD COLUMN close_at TIMESTAMP;
+ALTER TABLE form_configs ADD COLUMN timezone VARCHAR(255) DEFAULT 'UTC';
+ALTER TABLE form_configs ADD COLUMN access_mode VARCHAR(255) DEFAULT 'PUBLIC';
+ALTER TABLE form_configs ADD COLUMN password_hash VARCHAR(255);
+ALTER TABLE form_configs ADD COLUMN max_responses INTEGER DEFAULT 0;
+ALTER TABLE form_configs ADD COLUMN closed_reason VARCHAR(255);

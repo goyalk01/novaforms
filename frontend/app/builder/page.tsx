@@ -119,6 +119,31 @@ type SubmissionSettings = {
   thankYouTitle: string;
   thankYouDescription: string;
   successIllustration: string;
+
+  // Custom unavailable pages settings
+  closedTitle?: string;
+  closedDescription?: string;
+  closedIllustration?: string;
+  closedButtonLabel?: string;
+  closedRedirectUrl?: string;
+
+  pausedTitle?: string;
+  pausedDescription?: string;
+  pausedIllustration?: string;
+  pausedButtonLabel?: string;
+  pausedRedirectUrl?: string;
+
+  scheduledTitle?: string;
+  scheduledDescription?: string;
+  scheduledIllustration?: string;
+  scheduledButtonLabel?: string;
+  scheduledRedirectUrl?: string;
+
+  limitTitle?: string;
+  limitDescription?: string;
+  limitIllustration?: string;
+  limitButtonLabel?: string;
+  limitRedirectUrl?: string;
 };
 
 type BuilderState = {
@@ -132,6 +157,16 @@ type BuilderState = {
   bannerUrl: string;
   videoUrl: string;
   settings: SubmissionSettings;
+
+  status: string;
+  published: boolean;
+  openAt: string;
+  closeAt: string;
+  timezone: string;
+  accessMode: string;
+  password?: string;
+  maxResponses: number;
+  closedReason: string;
 };
 
 type AnswerValue = string | string[];
@@ -369,7 +404,31 @@ const defaultSettings: SubmissionSettings = {
   successMessage: 'Your responses were successfully logged to the NovaForms vault.',
   thankYouTitle: 'Response Submitted!',
   thankYouDescription: '',
-  successIllustration: ''
+  successIllustration: '',
+
+  closedTitle: 'Form Closed',
+  closedDescription: 'This form has been closed by its owner to new responses.',
+  closedIllustration: '🔒',
+  closedButtonLabel: '',
+  closedRedirectUrl: '',
+
+  pausedTitle: 'Form Paused',
+  pausedDescription: 'This form is temporarily paused. Check back later.',
+  pausedIllustration: '⏸',
+  pausedButtonLabel: '',
+  pausedRedirectUrl: '',
+
+  scheduledTitle: 'Not Open Yet',
+  scheduledDescription: 'This form is not accepting responses yet.',
+  scheduledIllustration: '⏳',
+  scheduledButtonLabel: '',
+  scheduledRedirectUrl: '',
+
+  limitTitle: 'Capacity Reached',
+  limitDescription: 'This form has reached its maximum response capacity.',
+  limitIllustration: '🚫',
+  limitButtonLabel: '',
+  limitRedirectUrl: ''
 };
 
 function BuilderComponent() {
@@ -392,7 +451,16 @@ function BuilderComponent() {
         totalPages: 1,
         bannerUrl: '',
         videoUrl: '',
-        settings: defaultSettings
+        settings: defaultSettings,
+        status: 'DRAFT',
+        published: false,
+        openAt: '',
+        closeAt: '',
+        timezone: 'UTC',
+        accessMode: 'PUBLIC',
+        password: '',
+        maxResponses: 0,
+        closedReason: ''
       };
     }
     return {
@@ -405,7 +473,16 @@ function BuilderComponent() {
       totalPages: 1,
       bannerUrl: '',
       videoUrl: '',
-      settings: defaultSettings
+      settings: defaultSettings,
+      status: 'DRAFT',
+      published: false,
+      openAt: '',
+      closeAt: '',
+      timezone: 'UTC',
+      accessMode: 'PUBLIC',
+      password: '',
+      maxResponses: 0,
+      closedReason: ''
     };
   });
 
@@ -428,6 +505,7 @@ function BuilderComponent() {
   const [previewPage, setPreviewPage] = useState(1);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved' | 'error'>('saved');
   const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [expandedSection, setExpandedSection] = useState<string | null>('lifecycle');
 
   const [accentColor, setAccentColor] = useState<string>(() => {
     if (typeof window !== 'undefined') {
@@ -500,7 +578,7 @@ function BuilderComponent() {
 
   const loadConfig = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/form-config/${formId}`);
+      const res = await fetch(`${API_BASE}/api/form-config/${formId}?email=${encodeURIComponent(currentUser)}`);
       if (res.ok) {
         const data = await res.json();
         const conf = data.config;
@@ -523,7 +601,16 @@ function BuilderComponent() {
             totalPages: conf.totalPages || 1,
             bannerUrl: conf.bannerUrl || '',
             videoUrl: conf.videoUrl || '',
-            settings: parsedSettings
+            settings: parsedSettings,
+            status: conf.status || 'DRAFT',
+            published: conf.published ?? false,
+            openAt: conf.openAt ? conf.openAt.substring(0, 16) : '',
+            closeAt: conf.closeAt ? conf.closeAt.substring(0, 16) : '',
+            timezone: conf.timezone || 'UTC',
+            accessMode: conf.accessMode || 'PUBLIC',
+            password: '',
+            maxResponses: conf.maxResponses ?? 0,
+            closedReason: conf.closedReason || ''
           });
           if (conf.questionsJson) {
             try {
@@ -597,7 +684,16 @@ function BuilderComponent() {
           themeMode: builder.themeMode,
           layoutDensity: builder.densityMode,
           submissionMode: builder.submissionMode,
-          totalPages: builder.totalPages
+          totalPages: builder.totalPages,
+          status: builder.status,
+          published: builder.published,
+          openAt: builder.openAt ? new Date(builder.openAt).toISOString() : null,
+          closeAt: builder.closeAt ? new Date(builder.closeAt).toISOString() : null,
+          timezone: builder.timezone,
+          accessMode: builder.accessMode,
+          password: builder.password,
+          maxResponses: builder.maxResponses,
+          closedReason: builder.closedReason
         };
         const res = await fetch(`${API_BASE}/api/form-config/${formId}`, {
           method: 'POST',
@@ -632,6 +728,15 @@ function BuilderComponent() {
     builder.submissionMode,
     builder.totalPages,
     builder.settings,
+    builder.status,
+    builder.published,
+    builder.openAt,
+    builder.closeAt,
+    builder.timezone,
+    builder.accessMode,
+    builder.password,
+    builder.maxResponses,
+    builder.closedReason,
     formId
   ]);
 
@@ -2496,114 +2601,583 @@ function BuilderComponent() {
           </div>
 
           <div className="rail-block">
-            <p className="section-label">Submission Settings</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <label style={{ display: 'flex', alignContent: 'center', justifyContent: 'space-between', flexDirection: 'row', cursor: 'pointer' }}>
-                <span>Allow Editing</span>
-                <input
-                  type="checkbox"
-                  checked={builder.settings.allowEdit}
-                  onChange={(e) => updateSettings('allowEdit', e.target.checked)}
-                  style={{ width: '16px', height: '16px', accentColor: 'var(--accent)', margin: 0 }}
-                />
-              </label>
+            <p className="section-label">Form Settings</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {/* Lifecycle Section */}
+              <div className="settings-accordion-item" style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }}>
+                <button
+                  type="button"
+                  onClick={() => setExpandedSection(expandedSection === 'lifecycle' ? null : 'lifecycle')}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    background: 'rgba(255,255,255,0.02)',
+                    border: 'none',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    cursor: 'pointer',
+                    fontFamily: 'Orbitron, sans-serif',
+                    fontSize: '0.8rem',
+                    color: 'var(--text)',
+                    textAlign: 'left'
+                  }}
+                >
+                  <span>📁 Lifecycle</span>
+                  <span>{expandedSection === 'lifecycle' ? '▼' : '▶'}</span>
+                </button>
+                {expandedSection === 'lifecycle' && (
+                  <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px', borderTop: '1px solid var(--border)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>Current Status</span>
+                      <span style={{
+                        padding: '2px 8px',
+                        borderRadius: '4px',
+                        fontSize: '0.75rem',
+                        fontWeight: 'bold',
+                        background: 
+                          builder.status === 'OPEN' ? 'rgba(34, 197, 94, 0.1)' :
+                          builder.status === 'PAUSED' ? 'rgba(234, 179, 8, 0.1)' :
+                          builder.status === 'CLOSED' ? 'rgba(239, 68, 68, 0.1)' :
+                          builder.status === 'ARCHIVED' ? 'rgba(156, 163, 175, 0.1)' : 'rgba(234, 179, 8, 0.1)',
+                        color:
+                          builder.status === 'OPEN' ? '#22c55e' :
+                          builder.status === 'PAUSED' ? '#eab308' :
+                          builder.status === 'CLOSED' ? '#ef4444' :
+                          builder.status === 'ARCHIVED' ? '#9ca3af' : '#eab308',
+                        border: 
+                          builder.status === 'OPEN' ? '1px solid #22c55e' :
+                          builder.status === 'PAUSED' ? '1px solid #eab308' :
+                          builder.status === 'CLOSED' ? '1px solid #ef4444' :
+                          builder.status === 'ARCHIVED' ? '1px solid #9ca3af' : '1px solid #eab308'
+                      }}>
+                        {builder.status === 'OPEN' ? '🟢 Open' :
+                         builder.status === 'PAUSED' ? '⏸ Paused' :
+                         builder.status === 'CLOSED' ? '🔴 Closed' :
+                         builder.status === 'ARCHIVED' ? '📦 Archived' : '🟡 Draft'}
+                      </span>
+                    </div>
+                    
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
+                      {!builder.published && (
+                        <button
+                          type="button"
+                          className="submit-button"
+                          style={{ padding: '6px 12px', fontSize: '0.75rem', width: '100%' }}
+                          onClick={async () => {
+                            try {
+                              const res = await fetch(`${API_BASE}/api/form-config/${formId}/publish`, { method: 'POST' });
+                              if (res.ok) {
+                                setBuilder(prev => ({ ...prev, published: true, status: 'OPEN' }));
+                                alert("Form successfully published!");
+                              }
+                            } catch (e) {
+                              alert("Publish failed");
+                            }
+                          }}
+                        >
+                          🚀 Publish Form
+                        </button>
+                      )}
+                      {builder.published && (
+                        <>
+                          {builder.status === 'OPEN' && (
+                            <button
+                              type="button"
+                              className="ghost-button"
+                              style={{ padding: '6px 12px', fontSize: '0.75rem', width: '100%' }}
+                              onClick={async () => {
+                                try {
+                                  const res = await fetch(`${API_BASE}/api/form-config/${formId}/pause`, { method: 'POST' });
+                                  if (res.ok) {
+                                    setBuilder(prev => ({ ...prev, status: 'PAUSED' }));
+                                  }
+                                } catch (e) {
+                                  alert("Pause failed");
+                                }
+                              }}
+                            >
+                              ⏸ Pause Form
+                            </button>
+                          )}
+                          {builder.status === 'PAUSED' && (
+                            <button
+                              type="button"
+                              className="submit-button"
+                              style={{ padding: '6px 12px', fontSize: '0.75rem', width: '100%' }}
+                              onClick={async () => {
+                                try {
+                                  const res = await fetch(`${API_BASE}/api/form-config/${formId}/resume`, { method: 'POST' });
+                                  if (res.ok) {
+                                    setBuilder(prev => ({ ...prev, status: 'OPEN' }));
+                                  }
+                                } catch (e) {
+                                  alert("Resume failed");
+                                }
+                              }}
+                            >
+                              ▶ Resume Form
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="ghost-button danger"
+                            style={{ padding: '6px 12px', fontSize: '0.75rem', width: '100%' }}
+                            onClick={async () => {
+                              if (confirm("Are you sure you want to unpublish? This will revert the form to a draft state.")) {
+                                try {
+                                  const res = await fetch(`${API_BASE}/api/form-config/${formId}/unpublish`, { method: 'POST' });
+                                  if (res.ok) {
+                                    setBuilder(prev => ({ ...prev, published: false, status: 'DRAFT' }));
+                                  }
+                                } catch (e) {
+                                  alert("Unpublish failed");
+                                }
+                              }
+                            }}
+                          >
+                            ↩ Unpublish Form
+                          </button>
+                        </>
+                      )}
+                      {builder.status !== 'ARCHIVED' && (
+                        <button
+                          type="button"
+                          className="ghost-button danger"
+                          style={{ padding: '6px 12px', fontSize: '0.75rem', width: '100%' }}
+                          onClick={async () => {
+                            if (confirm("Archive this form? It will become read-only.")) {
+                              try {
+                                const res = await fetch(`${API_BASE}/api/form-config/${formId}/archive`, { method: 'POST' });
+                                if (res.ok) {
+                                  setBuilder(prev => ({ ...prev, status: 'ARCHIVED' }));
+                                }
+                              } catch (e) {
+                                  alert("Archive failed");
+                              }
+                            }
+                          }}
+                        >
+                          📦 Archive Form
+                        </button>
+                      )}
+                      {builder.status === 'ARCHIVED' && (
+                        <button
+                          type="button"
+                          className="submit-button"
+                          style={{ padding: '6px 12px', fontSize: '0.75rem', width: '100%' }}
+                          onClick={async () => {
+                            try {
+                              const res = await fetch(`${API_BASE}/api/form-config/${formId}/unpublish`, { method: 'POST' });
+                              if (res.ok) {
+                                setBuilder(prev => ({ ...prev, published: false, status: 'DRAFT' }));
+                              }
+                            } catch (e) {
+                              alert("Restore failed");
+                            }
+                          }}
+                        >
+                          ♻ Restore Draft
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
 
-              <label style={{ display: 'flex', alignContent: 'center', justifyContent: 'space-between', flexDirection: 'row', cursor: 'pointer' }}>
-                <span>Allow Multiple Responses</span>
-                <input
-                  type="checkbox"
-                  checked={builder.settings.allowMultiple}
-                  onChange={(e) => updateSettings('allowMultiple', e.target.checked)}
-                  style={{ width: '16px', height: '16px', accentColor: 'var(--accent)', margin: 0 }}
-                />
-              </label>
+              {/* Availability Section */}
+              <div className="settings-accordion-item" style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }}>
+                <button
+                  type="button"
+                  onClick={() => setExpandedSection(expandedSection === 'availability' ? null : 'availability')}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    background: 'rgba(255,255,255,0.02)',
+                    border: 'none',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    cursor: 'pointer',
+                    fontFamily: 'Orbitron, sans-serif',
+                    fontSize: '0.8rem',
+                    color: 'var(--text)',
+                    textAlign: 'left'
+                  }}
+                >
+                  <span>📅 Availability</span>
+                  <span>{expandedSection === 'availability' ? '▼' : '▶'}</span>
+                </button>
+                {expandedSection === 'availability' && (
+                  <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px', borderTop: '1px solid var(--border)' }}>
+                    <label style={{ display: 'flex', alignContent: 'center', justifyContent: 'space-between', flexDirection: 'row', cursor: 'pointer' }}>
+                      <span>Manual Close</span>
+                      <input
+                        type="checkbox"
+                        checked={builder.status === 'CLOSED'}
+                        onChange={(e) => {
+                          setBuilder(prev => ({ ...prev, status: e.target.checked ? 'CLOSED' : 'OPEN' }));
+                        }}
+                        style={{ width: '16px', height: '16px', accentColor: 'var(--accent)', margin: 0 }}
+                      />
+                    </label>
+                    
+                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>Scheduled Opening Date</span>
+                      <input
+                        type="datetime-local"
+                        value={builder.openAt}
+                        onChange={(e) => setBuilder(prev => ({ ...prev, openAt: e.target.value }))}
+                        style={{ fontSize: '0.8rem', padding: '6px' }}
+                      />
+                    </label>
 
-              <label style={{ display: 'flex', alignContent: 'center', justifyContent: 'space-between', flexDirection: 'row', cursor: 'pointer' }}>
-                <span>Show Thank You Page</span>
-                <input
-                  type="checkbox"
-                  checked={builder.settings.showThankYou}
-                  onChange={(e) => updateSettings('showThankYou', e.target.checked)}
-                  style={{ width: '16px', height: '16px', accentColor: 'var(--accent)', margin: 0 }}
-                />
-              </label>
+                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>Scheduled Closing Date</span>
+                      <input
+                        type="datetime-local"
+                        value={builder.closeAt}
+                        onChange={(e) => setBuilder(prev => ({ ...prev, closeAt: e.target.value }))}
+                        style={{ fontSize: '0.8rem', padding: '6px' }}
+                      />
+                    </label>
 
-              {builder.settings.showThankYou && (
-                <>
-                  <label style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>Thank You Title</span>
-                    <input
-                      type="text"
-                      value={builder.settings.thankYouTitle}
-                      onChange={(e) => updateSettings('thankYouTitle', e.target.value)}
-                      style={{ fontSize: '0.8rem', padding: '6px' }}
-                    />
-                  </label>
-                  <label style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>Thank You Desc</span>
-                    <textarea
-                      rows={2}
-                      value={builder.settings.thankYouDescription}
-                      onChange={(e) => updateSettings('thankYouDescription', e.target.value)}
-                      style={{ fontSize: '0.8rem', padding: '6px', resize: 'vertical' }}
-                    />
-                  </label>
-                  <label style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>Illustration Preset</span>
-                    <select
-                      value={builder.settings.successIllustration}
-                      onChange={(e) => updateSettings('successIllustration', e.target.value)}
-                      style={{ fontSize: '0.8rem', padding: '6px' }}
-                    >
-                      <option value="">None</option>
-                      <option value="confetti">Confetti 🎉</option>
-                      <option value="cyber-globe">Cyber Globe 🌐</option>
-                      <option value="space-launch">Space Launch 🚀</option>
-                    </select>
-                  </label>
-                  <label style={{ display: 'flex', alignContent: 'center', justifyContent: 'space-between', flexDirection: 'row', cursor: 'pointer' }}>
-                    <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>Show Response ID</span>
-                    <input
-                      type="checkbox"
-                      checked={builder.settings.showSubmissionId}
-                      onChange={(e) => updateSettings('showSubmissionId', e.target.checked)}
-                      style={{ width: '16px', height: '16px', accentColor: 'var(--accent)', margin: 0 }}
-                    />
-                  </label>
-                </>
-              )}
+                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>Time Zone</span>
+                      <select
+                        value={builder.timezone}
+                        onChange={(e) => setBuilder(prev => ({ ...prev, timezone: e.target.value }))}
+                        style={{ fontSize: '0.8rem', padding: '6px' }}
+                      >
+                        <option value="UTC">UTC</option>
+                        <option value="America/New_York">EST/EDT (New York)</option>
+                        <option value="Europe/London">GMT/BST (London)</option>
+                        <option value="Asia/Kolkata">IST (Kolkata)</option>
+                        <option value="Asia/Tokyo">JST (Tokyo)</option>
+                        <option value="Australia/Sydney">AEST/AEDT (Sydney)</option>
+                      </select>
+                    </label>
 
-              <label style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>Redirect URL on Success</span>
-                <input
-                  type="text"
-                  placeholder="https://example.com/success"
-                  value={builder.settings.redirectUrl}
-                  onChange={(e) => updateSettings('redirectUrl', e.target.value)}
-                  style={{ fontSize: '0.8rem', padding: '6px' }}
-                />
-              </label>
+                    <details style={{ marginTop: '8px' }}>
+                      <summary style={{ fontSize: '0.75rem', cursor: 'pointer', color: 'var(--accent)' }}>Custom Paused Page</summary>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px', paddingLeft: '8px', borderLeft: '1px solid var(--border)' }}>
+                        <input
+                          type="text"
+                          placeholder="Paused Title"
+                          value={builder.settings.pausedTitle || ''}
+                          onChange={(e) => updateSettings('pausedTitle', e.target.value)}
+                          style={{ fontSize: '0.75rem', padding: '4px' }}
+                        />
+                        <textarea
+                          placeholder="Paused Description"
+                          rows={2}
+                          value={builder.settings.pausedDescription || ''}
+                          onChange={(e) => updateSettings('pausedDescription', e.target.value)}
+                          style={{ fontSize: '0.75rem', padding: '4px', resize: 'vertical' }}
+                        />
+                        <input
+                          type="text"
+                          placeholder="Paused Illustration (e.g. ⏸)"
+                          value={builder.settings.pausedIllustration || ''}
+                          onChange={(e) => updateSettings('pausedIllustration', e.target.value)}
+                          style={{ fontSize: '0.75rem', padding: '4px' }}
+                        />
+                      </div>
+                    </details>
 
-              <label style={{ display: 'flex', alignContent: 'center', justifyContent: 'space-between', flexDirection: 'row', cursor: 'pointer' }}>
-                <span>Close to submissions</span>
-                <input
-                  type="checkbox"
-                  checked={builder.settings.closeForm}
-                  onChange={(e) => updateSettings('closeForm', e.target.checked)}
-                  style={{ width: '16px', height: '16px', accentColor: 'var(--accent)', margin: 0 }}
-                />
-              </label>
+                    <details style={{ marginTop: '8px' }}>
+                      <summary style={{ fontSize: '0.75rem', cursor: 'pointer', color: 'var(--accent)' }}>Custom Closed Page</summary>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px', paddingLeft: '8px', borderLeft: '1px solid var(--border)' }}>
+                        <input
+                          type="text"
+                          placeholder="Closed Title"
+                          value={builder.settings.closedTitle || ''}
+                          onChange={(e) => updateSettings('closedTitle', e.target.value)}
+                          style={{ fontSize: '0.75rem', padding: '4px' }}
+                        />
+                        <textarea
+                          placeholder="Closed Description"
+                          rows={2}
+                          value={builder.settings.closedDescription || ''}
+                          onChange={(e) => updateSettings('closedDescription', e.target.value)}
+                          style={{ fontSize: '0.75rem', padding: '4px', resize: 'vertical' }}
+                        />
+                        <input
+                          type="text"
+                          placeholder="Closed Illustration (e.g. 🔒)"
+                          value={builder.settings.closedIllustration || ''}
+                          onChange={(e) => updateSettings('closedIllustration', e.target.value)}
+                          style={{ fontSize: '0.75rem', padding: '4px' }}
+                        />
+                      </div>
+                    </details>
 
-              <label style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>Max Responses (0 = Unlimited)</span>
-                <input
-                  type="number"
-                  min="0"
-                  value={builder.settings.maxResponses}
-                  onChange={(e) => updateSettings('maxResponses', Number(e.target.value))}
-                  style={{ fontSize: '0.8rem', padding: '6px' }}
-                />
-              </label>
+                    <details style={{ marginTop: '8px' }}>
+                      <summary style={{ fontSize: '0.75rem', cursor: 'pointer', color: 'var(--accent)' }}>Custom Scheduled Page</summary>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px', paddingLeft: '8px', borderLeft: '1px solid var(--border)' }}>
+                        <input
+                          type="text"
+                          placeholder="Scheduled Title"
+                          value={builder.settings.scheduledTitle || ''}
+                          onChange={(e) => updateSettings('scheduledTitle', e.target.value)}
+                          style={{ fontSize: '0.75rem', padding: '4px' }}
+                        />
+                        <textarea
+                          placeholder="Scheduled Description"
+                          rows={2}
+                          value={builder.settings.scheduledDescription || ''}
+                          onChange={(e) => updateSettings('scheduledDescription', e.target.value)}
+                          style={{ fontSize: '0.75rem', padding: '4px', resize: 'vertical' }}
+                        />
+                        <input
+                          type="text"
+                          placeholder="Scheduled Illustration (e.g. ⏳)"
+                          value={builder.settings.scheduledIllustration || ''}
+                          onChange={(e) => updateSettings('scheduledIllustration', e.target.value)}
+                          style={{ fontSize: '0.75rem', padding: '4px' }}
+                        />
+                      </div>
+                    </details>
+                  </div>
+                )}
+              </div>
+
+              {/* Responses Section */}
+              <div className="settings-accordion-item" style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }}>
+                <button
+                  type="button"
+                  onClick={() => setExpandedSection(expandedSection === 'responses' ? null : 'responses')}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    background: 'rgba(255,255,255,0.02)',
+                    border: 'none',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    cursor: 'pointer',
+                    fontFamily: 'Orbitron, sans-serif',
+                    fontSize: '0.8rem',
+                    color: 'var(--text)',
+                    textAlign: 'left'
+                  }}
+                >
+                  <span>📊 Responses</span>
+                  <span>{expandedSection === 'responses' ? '▼' : '▶'}</span>
+                </button>
+                {expandedSection === 'responses' && (
+                  <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px', borderTop: '1px solid var(--border)' }}>
+                    <label style={{ display: 'flex', alignContent: 'center', justifyContent: 'space-between', flexDirection: 'row', cursor: 'pointer' }}>
+                      <span>Allow Editing</span>
+                      <input
+                        type="checkbox"
+                        checked={builder.settings.allowEdit}
+                        onChange={(e) => updateSettings('allowEdit', e.target.checked)}
+                        style={{ width: '16px', height: '16px', accentColor: 'var(--accent)', margin: 0 }}
+                      />
+                    </label>
+
+                    <label style={{ display: 'flex', alignContent: 'center', justifyContent: 'space-between', flexDirection: 'row', cursor: 'pointer' }}>
+                      <span>Allow Multiple</span>
+                      <input
+                        type="checkbox"
+                        checked={builder.settings.allowMultiple}
+                        onChange={(e) => updateSettings('allowMultiple', e.target.checked)}
+                        style={{ width: '16px', height: '16px', accentColor: 'var(--accent)', margin: 0 }}
+                      />
+                    </label>
+
+                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>Max Responses (0 = Unlimited)</span>
+                      <input
+                        type="number"
+                        min="0"
+                        value={builder.maxResponses}
+                        onChange={(e) => setBuilder(prev => ({ ...prev, maxResponses: Number(e.target.value) }))}
+                        style={{ fontSize: '0.8rem', padding: '6px' }}
+                      />
+                    </label>
+
+                    <details style={{ marginTop: '8px' }}>
+                      <summary style={{ fontSize: '0.75rem', cursor: 'pointer', color: 'var(--accent)' }}>Custom Limit Reached Page</summary>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px', paddingLeft: '8px', borderLeft: '1px solid var(--border)' }}>
+                        <input
+                          type="text"
+                          placeholder="Limit Reached Title"
+                          value={builder.settings.limitTitle || ''}
+                          onChange={(e) => updateSettings('limitTitle', e.target.value)}
+                          style={{ fontSize: '0.75rem', padding: '4px' }}
+                        />
+                        <textarea
+                          placeholder="Limit Reached Description"
+                          rows={2}
+                          value={builder.settings.limitDescription || ''}
+                          onChange={(e) => updateSettings('limitDescription', e.target.value)}
+                          style={{ fontSize: '0.75rem', padding: '4px', resize: 'vertical' }}
+                        />
+                        <input
+                          type="text"
+                          placeholder="Limit Reached Illustration"
+                          value={builder.settings.limitIllustration || ''}
+                          onChange={(e) => updateSettings('limitIllustration', e.target.value)}
+                          style={{ fontSize: '0.75rem', padding: '4px' }}
+                        />
+                      </div>
+                    </details>
+                  </div>
+                )}
+              </div>
+
+              {/* Completion Section */}
+              <div className="settings-accordion-item" style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }}>
+                <button
+                  type="button"
+                  onClick={() => setExpandedSection(expandedSection === 'completion' ? null : 'completion')}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    background: 'rgba(255,255,255,0.02)',
+                    border: 'none',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    cursor: 'pointer',
+                    fontFamily: 'Orbitron, sans-serif',
+                    fontSize: '0.8rem',
+                    color: 'var(--text)',
+                    textAlign: 'left'
+                  }}
+                >
+                  <span>✓ Completion</span>
+                  <span>{expandedSection === 'completion' ? '▼' : '▶'}</span>
+                </button>
+                {expandedSection === 'completion' && (
+                  <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px', borderTop: '1px solid var(--border)' }}>
+                    <label style={{ display: 'flex', alignContent: 'center', justifyContent: 'space-between', flexDirection: 'row', cursor: 'pointer' }}>
+                      <span>Show Thank You</span>
+                      <input
+                        type="checkbox"
+                        checked={builder.settings.showThankYou}
+                        onChange={(e) => updateSettings('showThankYou', e.target.checked)}
+                        style={{ width: '16px', height: '16px', accentColor: 'var(--accent)', margin: 0 }}
+                      />
+                    </label>
+
+                    {builder.settings.showThankYou && (
+                      <>
+                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>Thank You Title</span>
+                          <input
+                            type="text"
+                            value={builder.settings.thankYouTitle}
+                            onChange={(e) => updateSettings('thankYouTitle', e.target.value)}
+                            style={{ fontSize: '0.8rem', padding: '6px' }}
+                          />
+                        </label>
+                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>Thank You Desc</span>
+                          <textarea
+                            rows={2}
+                            value={builder.settings.thankYouDescription}
+                            onChange={(e) => updateSettings('thankYouDescription', e.target.value)}
+                            style={{ fontSize: '0.8rem', padding: '6px', resize: 'vertical' }}
+                          />
+                        </label>
+                        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>Illustration Preset</span>
+                          <select
+                            value={builder.settings.successIllustration}
+                            onChange={(e) => updateSettings('successIllustration', e.target.value)}
+                            style={{ fontSize: '0.8rem', padding: '6px' }}
+                          >
+                            <option value="">None</option>
+                            <option value="confetti">Confetti 🎉</option>
+                            <option value="cyber-globe">Cyber Globe 🌐</option>
+                            <option value="space-launch">Space Launch 🚀</option>
+                          </select>
+                        </label>
+                        <label style={{ display: 'flex', alignContent: 'center', justifyContent: 'space-between', flexDirection: 'row', cursor: 'pointer' }}>
+                          <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>Show Response ID</span>
+                          <input
+                            type="checkbox"
+                            checked={builder.settings.showSubmissionId}
+                            onChange={(e) => updateSettings('showSubmissionId', e.target.checked)}
+                            style={{ width: '16px', height: '16px', accentColor: 'var(--accent)', margin: 0 }}
+                          />
+                        </label>
+                      </>
+                    )}
+
+                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>Redirect URL on Success</span>
+                      <input
+                        type="text"
+                        placeholder="https://example.com/success"
+                        value={builder.settings.redirectUrl}
+                        onChange={(e) => updateSettings('redirectUrl', e.target.value)}
+                        style={{ fontSize: '0.8rem', padding: '6px' }}
+                      />
+                    </label>
+                  </div>
+                )}
+              </div>
+
+              {/* Access Section */}
+              <div className="settings-accordion-item" style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }}>
+                <button
+                  type="button"
+                  onClick={() => setExpandedSection(expandedSection === 'access' ? null : 'access')}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    background: 'rgba(255,255,255,0.02)',
+                    border: 'none',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    cursor: 'pointer',
+                    fontFamily: 'Orbitron, sans-serif',
+                    fontSize: '0.8rem',
+                    color: 'var(--text)',
+                    textAlign: 'left'
+                  }}
+                >
+                  <span>🛡 Access Control</span>
+                  <span>{expandedSection === 'access' ? '▼' : '▶'}</span>
+                </button>
+                {expandedSection === 'access' && (
+                  <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px', borderTop: '1px solid var(--border)' }}>
+                    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>Access Mode</span>
+                      <select
+                        value={builder.accessMode}
+                        onChange={(e) => setBuilder(prev => ({ ...prev, accessMode: e.target.value }))}
+                        style={{ fontSize: '0.8rem', padding: '6px' }}
+                      >
+                        <option value="PUBLIC">🔓 Public</option>
+                        <option value="PASSWORD_PROTECTED">🔒 Password Protected</option>
+                      </select>
+                    </label>
+                    
+                    {builder.accessMode === 'PASSWORD_PROTECTED' && (
+                      <label style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>Set Password</span>
+                        <input
+                          type="password"
+                          placeholder="Enter new password"
+                          value={builder.password || ''}
+                          onChange={(e) => setBuilder(prev => ({ ...prev, password: e.target.value }))}
+                          style={{ fontSize: '0.8rem', padding: '6px' }}
+                        />
+                        <span style={{ fontSize: '0.7rem', color: 'var(--muted)', marginTop: '2px' }}>
+                          Leave blank to keep existing password.
+                        </span>
+                      </label>
+                    )}
+                  </div>
+                )}
+              </div>
+
             </div>
           </div>
 

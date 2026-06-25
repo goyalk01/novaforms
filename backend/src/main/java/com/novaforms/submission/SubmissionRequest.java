@@ -19,7 +19,8 @@ public record SubmissionRequest(
     List<String> interests,
     String questionsJson,
     String answersJson,
-    String message) {
+    String message,
+    String password) {
   public SubmissionRequest {
     rating = rating == null ? 0 : rating;
     submissionMode = submissionMode == null || submissionMode.isBlank() ? "standard" : submissionMode;

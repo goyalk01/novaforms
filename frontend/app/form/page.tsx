@@ -98,6 +98,31 @@ type SubmissionSettings = {
   thankYouTitle: string;
   thankYouDescription: string;
   successIllustration: string;
+
+  // Custom unavailable pages settings
+  closedTitle?: string;
+  closedDescription?: string;
+  closedIllustration?: string;
+  closedButtonLabel?: string;
+  closedRedirectUrl?: string;
+
+  pausedTitle?: string;
+  pausedDescription?: string;
+  pausedIllustration?: string;
+  pausedButtonLabel?: string;
+  pausedRedirectUrl?: string;
+
+  scheduledTitle?: string;
+  scheduledDescription?: string;
+  scheduledIllustration?: string;
+  scheduledButtonLabel?: string;
+  scheduledRedirectUrl?: string;
+
+  limitTitle?: string;
+  limitDescription?: string;
+  limitIllustration?: string;
+  limitButtonLabel?: string;
+  limitRedirectUrl?: string;
 };
 
 type AnswerValue = string | string[];
@@ -157,7 +182,31 @@ const defaultSettings: SubmissionSettings = {
   successMessage: 'Your responses were successfully logged to the NovaForms vault.',
   thankYouTitle: 'Response Submitted!',
   thankYouDescription: '',
-  successIllustration: ''
+  successIllustration: '',
+
+  closedTitle: 'Form Closed',
+  closedDescription: 'This form has been closed by its owner to new responses.',
+  closedIllustration: '🔒',
+  closedButtonLabel: '',
+  closedRedirectUrl: '',
+
+  pausedTitle: 'Form Paused',
+  pausedDescription: 'This form is temporarily paused. Check back later.',
+  pausedIllustration: '⏸',
+  pausedButtonLabel: '',
+  pausedRedirectUrl: '',
+
+  scheduledTitle: 'Not Open Yet',
+  scheduledDescription: 'This form is not accepting responses yet.',
+  scheduledIllustration: '⏳',
+  scheduledButtonLabel: '',
+  scheduledRedirectUrl: '',
+
+  limitTitle: 'Capacity Reached',
+  limitDescription: 'This form has reached its maximum response capacity.',
+  limitIllustration: '🚫',
+  limitButtonLabel: '',
+  limitRedirectUrl: ''
 };
 
 function SignaturePad({ value, onChange }: { value: string; onChange: (val: string) => void }) {
@@ -404,7 +453,21 @@ function FormIntakeComponent() {
     videoUrl?: string;
     questions: Question[];
     settings: SubmissionSettings;
+    accessMode?: string;
+    openAt?: string;
   } | null>(null);
+
+  const [dynamicStatus, setDynamicStatus] = useState<string>('LOADING');
+  const [accessMode, setAccessMode] = useState<string>('PUBLIC');
+  const [openAt, setOpenAt] = useState<string>('');
+  const [closeAt, setCloseAt] = useState<string>('');
+  const [timezone, setTimezone] = useState<string>('UTC');
+  const [timeRemaining, setTimeRemaining] = useState<string>('');
+
+  const [password, setPassword] = useState('');
+  const [passwordVerified, setPasswordVerified] = useState(false);
+  const [passwordError, setPasswordError] = useState('');
+  const [verifyingPassword, setVerifyingPassword] = useState(false);
 
   const [answers, setAnswers] = useState<Record<string, AnswerValue>>({});
   const [loading, setLoading] = useState(false);
@@ -426,6 +489,12 @@ function FormIntakeComponent() {
           const data = await response.json();
           const conf = data.config;
           if (conf) {
+            setDynamicStatus(data.dynamicStatus || 'OPEN');
+            setAccessMode(conf.accessMode || 'PUBLIC');
+            setOpenAt(conf.openAt || '');
+            setCloseAt(conf.closeAt || '');
+            setTimezone(conf.timezone || 'UTC');
+
             let questions = [];
             try {
               questions = JSON.parse(conf.questionsJson || '[]');
@@ -451,7 +520,9 @@ function FormIntakeComponent() {
               bannerUrl: conf.bannerUrl || '',
               videoUrl: conf.videoUrl || '',
               questions,
-              settings: parsedSettings
+              settings: parsedSettings,
+              accessMode: conf.accessMode || 'PUBLIC',
+              openAt: conf.openAt || ''
             };
           }
         }
@@ -475,8 +546,11 @@ function FormIntakeComponent() {
           density: 'comfortable',
           submissionMode: 'standard',
           questions: defaultQuestions,
-          settings: defaultSettings
+          settings: defaultSettings,
+          accessMode: 'PUBLIC',
+          openAt: ''
         };
+        setDynamicStatus('OPEN');
       }
 
       setFormConfig(loadedConfig);
@@ -519,6 +593,88 @@ function FormIntakeComponent() {
 
     void loadFormConfig();
   }, [formId, submissionId]);
+
+  // Countdown Timer for Scheduled opening
+  useEffect(() => {
+    if (dynamicStatus === 'SCHEDULED' && openAt) {
+      const target = new Date(openAt).getTime();
+      const interval = setInterval(() => {
+        const diff = target - Date.now();
+        if (diff <= 0) {
+          clearInterval(interval);
+          window.location.reload();
+        } else {
+          const secs = Math.floor(diff / 1000);
+          const mins = Math.floor(secs / 60);
+          const hours = Math.floor(mins / 60);
+          const days = Math.floor(hours / 24);
+
+          const dStr = days > 0 ? `${days}d ` : '';
+          const hStr = (hours % 24) > 0 || days > 0 ? `${hours % 24}h ` : '';
+          const mStr = (mins % 60) > 0 || hours > 0 ? `${mins % 60}m ` : '';
+          const sStr = `${secs % 60}s`;
+
+          setTimeRemaining(`${dStr}${hStr}${mStr}${sStr}`);
+        }
+      }, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [dynamicStatus, openAt]);
+
+  const handleVerifyPassword = async (e: FormEvent) => {
+    e.preventDefault();
+    setPasswordError('');
+    setVerifyingPassword(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/form-config/${formId}/verify-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const conf = data.config;
+        if (conf) {
+          let questions = [];
+          try {
+            questions = JSON.parse(conf.questionsJson || '[]');
+          } catch (err) {
+            console.error("Failed to parse questionsJson:", err);
+          }
+          let parsedSettings = defaultSettings;
+          if (conf.settingsJson) {
+            try {
+              parsedSettings = { ...defaultSettings, ...JSON.parse(conf.settingsJson) };
+            } catch (e) {
+              console.error("Failed to parse settingsJson", e);
+            }
+          }
+          setFormConfig({
+            title: conf.title || 'Orbit Intake',
+            description: conf.description || '',
+            workspaceName: conf.name || 'Nova Studio',
+            theme: conf.themeMode || 'silver',
+            density: conf.layoutDensity || 'comfortable',
+            submissionMode: conf.submissionMode || 'standard',
+            totalPages: conf.totalPages || 1,
+            bannerUrl: conf.bannerUrl || '',
+            videoUrl: conf.videoUrl || '',
+            questions,
+            settings: parsedSettings
+          });
+          initAnswers(questions);
+          setPasswordVerified(true);
+        }
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setPasswordError(err.message || 'Incorrect password. Access denied.');
+      }
+    } catch {
+      setPasswordError('Error verifying password. Backend might be offline.');
+    } finally {
+      setVerifyingPassword(false);
+    }
+  };
 
   const initAnswers = (questions: Question[]) => {
     const initial = questions.reduce<Record<string, AnswerValue>>((acc, q) => {
@@ -756,7 +912,8 @@ function FormIntakeComponent() {
         .flatMap((q) => (Array.isArray(answers[q.id]) ? (answers[q.id] as string[]) : [])),
       questionsJson: JSON.stringify(formConfig.questions),
       answersJson: JSON.stringify(answers),
-      message: formConfig.description
+      message: formConfig.description,
+      password: password
     };
 
     try {
@@ -776,7 +933,8 @@ function FormIntakeComponent() {
       }
 
       if (!response.ok) {
-        throw new Error('Submit failed');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Submit failed');
       }
 
       const resData = await response.json();
@@ -797,8 +955,8 @@ function FormIntakeComponent() {
           window.location.href = settings.redirectUrl;
         }, 4000);
       }
-    } catch {
-      setErrorMsg('Could not submit response. Backend server might be offline.');
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Could not submit response. Backend server might be offline.');
     } finally {
       setLoading(false);
     }
@@ -814,18 +972,107 @@ function FormIntakeComponent() {
     );
   }
 
-  const isClosed = formConfig.settings.closeForm;
-  const maxReached = formConfig.settings.maxResponses > 0 && responseCount >= formConfig.settings.maxResponses;
+  // Handle password-protected forms challenge
+  if (accessMode === 'PASSWORD_PROTECTED' && !passwordVerified) {
+    return (
+      <main className="shell" style={{ maxWidth: '480px', padding: '100px 24px' }}>
+        <form onSubmit={handleVerifyPassword} className="canvas" style={{ textAlign: 'center', padding: '40px 24px', border: '1px solid var(--border)', borderRadius: 'var(--card-radius)', gap: '16px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <div style={{ fontSize: '3rem', color: 'var(--accent)', marginBottom: '8px' }}>🛡️</div>
+          <h2 style={{ fontSize: '1.6rem', margin: '0', fontFamily: 'Orbitron, sans-serif' }}>Secure Entry</h2>
+          <p style={{ color: 'var(--muted)', fontSize: '0.9rem', margin: '0 0 12px' }}>
+            This form is password-protected. Please enter the passcode to proceed.
+          </p>
+          
+          {passwordError && (
+            <div style={{ width: '100%', padding: '8px 12px', border: '1px solid #ef4444', backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', borderRadius: '8px', fontSize: '0.85rem' }}>
+              {passwordError}
+            </div>
+          )}
 
-  if (isClosed || maxReached) {
+          <input
+            type="password"
+            placeholder="Passcode"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            style={{ width: '100%', padding: '10px 12px', boxSizing: 'border-box' }}
+          />
+
+          <button type="submit" disabled={verifyingPassword} className="submit-button" style={{ width: '100%' }}>
+            {verifyingPassword ? 'Verifying...' : 'Access Form'}
+          </button>
+        </form>
+      </main>
+    );
+  }
+
+  // Handle unavailable status screens
+  if (dynamicStatus !== 'OPEN' && dynamicStatus !== 'LOADING') {
+    let title = 'Form Unavailable';
+    let description = 'This form is not currently accepting responses.';
+    let illustration = '🔒';
+    let btnLabel = '';
+    let redirectUrl = '';
+
+    if (dynamicStatus === 'DRAFT') {
+      title = 'Draft Mode';
+      description = 'This form is in draft mode and is not accepting responses publicly.';
+      illustration = '🟡';
+    } else if (dynamicStatus === 'ARCHIVED') {
+      title = 'Form Archived';
+      description = 'This form has been archived and is read-only.';
+      illustration = '📦';
+    } else if (dynamicStatus === 'PAUSED') {
+      title = formConfig.settings.pausedTitle || 'Form Paused';
+      description = formConfig.settings.pausedDescription || 'This form is temporarily paused. Check back later.';
+      illustration = formConfig.settings.pausedIllustration || '⏸';
+      btnLabel = formConfig.settings.pausedButtonLabel || '';
+      redirectUrl = formConfig.settings.pausedRedirectUrl || '';
+    } else if (dynamicStatus === 'CLOSED') {
+      title = formConfig.settings.closedTitle || 'Form Closed';
+      description = formConfig.settings.closedDescription || 'This form has been closed by its owner to new responses.';
+      illustration = formConfig.settings.closedIllustration || '🔒';
+      btnLabel = formConfig.settings.closedButtonLabel || '';
+      redirectUrl = formConfig.settings.closedRedirectUrl || '';
+    } else if (dynamicStatus === 'LIMIT_REACHED') {
+      title = formConfig.settings.limitTitle || 'Capacity Reached';
+      description = formConfig.settings.limitDescription || 'This form has reached its maximum response capacity.';
+      illustration = formConfig.settings.limitIllustration || '🚫';
+      btnLabel = formConfig.settings.limitButtonLabel || '';
+      redirectUrl = formConfig.settings.limitRedirectUrl || '';
+    } else if (dynamicStatus === 'SCHEDULED') {
+      title = formConfig.settings.scheduledTitle || 'Opening Soon';
+      description = formConfig.settings.scheduledDescription || 'This form is not accepting responses yet.';
+      illustration = formConfig.settings.scheduledIllustration || '⏳';
+      btnLabel = formConfig.settings.scheduledButtonLabel || '';
+      redirectUrl = formConfig.settings.scheduledRedirectUrl || '';
+    }
+
     return (
       <main className="shell" style={{ maxWidth: '680px', padding: '100px 24px' }}>
         <section className="canvas" style={{ textAlign: 'center', padding: '48px 24px', border: '1px solid var(--border)', borderRadius: 'var(--card-radius)' }}>
-          <div style={{ fontSize: '3rem', color: 'var(--accent)', marginBottom: '16px' }}>🔒</div>
-          <h2 style={{ fontSize: '1.8rem', margin: '0 0 12px', fontFamily: 'Orbitron, sans-serif' }}>Form Unavailable</h2>
-          <p style={{ color: 'var(--muted)', margin: 0 }}>
-            {isClosed ? 'This form has been closed by its owner to new responses.' : 'This form has reached its maximum response capacity.'}
+          <div style={{ fontSize: '3.5rem', marginBottom: '16px' }}>{illustration}</div>
+          <h2 style={{ fontSize: '1.8rem', margin: '0 0 12px', fontFamily: 'Orbitron, sans-serif' }}>{title}</h2>
+          <p style={{ color: 'var(--muted)', margin: '0 0 20px', fontSize: '1rem' }}>
+            {description}
           </p>
+
+          {dynamicStatus === 'SCHEDULED' && timeRemaining && (
+            <div style={{ margin: '10px 0 24px', fontSize: '1.4rem', fontFamily: 'Orbitron, sans-serif', color: 'var(--accent)', fontWeight: 'bold' }}>
+              Opening in: <span style={{ textShadow: '0 0 8px var(--accent-glow)' }}>{timeRemaining}</span>
+            </div>
+          )}
+
+          {btnLabel && redirectUrl && (
+            <button
+              type="button"
+              className="submit-button"
+              onClick={() => { window.location.href = redirectUrl; }}
+              style={{ padding: '10px 20px', borderRadius: '8px' }}
+            >
+              {btnLabel}
+            </button>
+          )}
         </section>
       </main>
     );

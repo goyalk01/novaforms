@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { useAuth } from '../AuthProvider';
 
 type Submission = {
   id: number;
@@ -44,18 +45,28 @@ export default function AdminPage() {
 function AdminDashboardComponent() {
   const searchParams = useSearchParams();
   const formId = searchParams.get('id') ?? '1';
+  const { user: authUser } = useAuth();
+  const currentUser = authUser?.email ?? 'owner@novaforms.com';
 
   const [submissions, setSubmissions] = useState<Submission[]>([]);
+  const [formConfig, setFormConfig] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState('Loading...');
   const [searchTerm, setSearchTerm] = useState('');
   const [filterMode, setFilterMode] = useState('');
   const [filterTheme, setFilterTheme] = useState('');
   const [selectedSub, setSelectedSub] = useState<Submission | null>(null);
+  const [timeRemaining, setTimeRemaining] = useState<string>('');
 
   const fetchSubmissions = async () => {
     try {
       setLoading(true);
+      const configRes = await fetch(`${API_BASE}/api/form-config/${formId}?email=${encodeURIComponent(currentUser)}`, { cache: 'no-store' });
+      if (configRes.ok) {
+        const configData = await configRes.json();
+        setFormConfig(configData);
+      }
+
       const response = await fetch(`${API_BASE}/api/submissions?formId=${formId}`, { cache: 'no-store' });
       if (!response.ok) {
         throw new Error('Failed to fetch data');
@@ -69,6 +80,44 @@ function AdminDashboardComponent() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!formConfig) return;
+    const dynamicStatus = formConfig.dynamicStatus;
+    const openAt = formConfig.config.openAt;
+    const closeAt = formConfig.config.closeAt;
+    
+    let targetTime = 0;
+    if (dynamicStatus === 'SCHEDULED' && openAt) {
+      targetTime = new Date(openAt).getTime();
+    } else if (dynamicStatus === 'OPEN' && closeAt) {
+      targetTime = new Date(closeAt).getTime();
+    }
+
+    if (targetTime > 0) {
+      const updateTimer = () => {
+        const diff = targetTime - Date.now();
+        if (diff <= 0) {
+          setTimeRemaining('Expired');
+        } else {
+          const secs = Math.floor(diff / 1000);
+          const mins = Math.floor(secs / 60);
+          const hours = Math.floor(mins / 60);
+          const days = Math.floor(hours / 24);
+          const dStr = days > 0 ? `${days}d ` : '';
+          const hStr = (hours % 24) > 0 || days > 0 ? `${hours % 24}h ` : '';
+          const mStr = (mins % 60) > 0 || hours > 0 ? `${mins % 60}m ` : '';
+          const sStr = `${secs % 60}s`;
+          setTimeRemaining(`${dStr}${hStr}${mStr}${sStr}`);
+        }
+      };
+      updateTimer();
+      const timer = setInterval(updateTimer, 1000);
+      return () => clearInterval(timer);
+    } else {
+      setTimeRemaining('-');
+    }
+  }, [formConfig]);
 
   useEffect(() => {
     void fetchSubmissions();
@@ -219,19 +268,55 @@ function AdminDashboardComponent() {
           <p className="lede">Access form database snapshots, export spreadsheets, and analyze submissions.</p>
         </div>
 
-        <div className="hero-panel">
+        <div className="hero-panel" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 'var(--spacing-base)' }}>
           <div className="stat-card">
-            <span>Filtered Total</span>
-            <strong>{filteredSubmissions.length}</strong>
+            <span>Form Status</span>
+            <strong style={{
+              fontSize: '1.25rem',
+              color: 
+                formConfig?.dynamicStatus === 'OPEN' ? '#22c55e' :
+                formConfig?.dynamicStatus === 'PAUSED' ? '#eab308' :
+                formConfig?.dynamicStatus === 'CLOSED' || formConfig?.dynamicStatus === 'LIMIT_REACHED' ? '#ef4444' :
+                formConfig?.dynamicStatus === 'ARCHIVED' ? '#9ca3af' : '#eab308',
+              fontFamily: 'Orbitron, sans-serif'
+            }}>
+              {formConfig?.dynamicStatus === 'OPEN' ? '🟢 Open' :
+               formConfig?.dynamicStatus === 'PAUSED' ? '⏸ Paused' :
+               formConfig?.dynamicStatus === 'CLOSED' ? '🔴 Closed' :
+               formConfig?.dynamicStatus === 'LIMIT_REACHED' ? '🔴 Limit Reached' :
+               formConfig?.dynamicStatus === 'SCHEDULED' ? '⏳ Scheduled' :
+               formConfig?.dynamicStatus === 'ARCHIVED' ? '📦 Archived' : '🟡 Draft'}
+            </strong>
           </div>
           <div className="stat-card">
-            <span>Avg Rating</span>
-            <strong>{stats.avgRating}</strong>
+            <span>Responses Capacity</span>
+            <strong style={{ fontSize: '1.3rem' }}>
+              {formConfig?.submissionCount ?? 0} / {formConfig?.config?.maxResponses > 0 ? formConfig.config.maxResponses : '∞'}
+            </strong>
           </div>
-          <div className="hero-note">
-            <p className="section-label">Database Status</p>
-            <strong>{status}</strong>
-            <span>Connected to backend at {API_BASE}.</span>
+          {formConfig?.dynamicStatus === 'SCHEDULED' && (
+            <div className="stat-card">
+              <span>Opening In</span>
+              <strong style={{ fontSize: '1.2rem', color: 'var(--accent)', fontFamily: 'Orbitron, sans-serif' }}>{timeRemaining}</strong>
+            </div>
+          )}
+          {formConfig?.dynamicStatus === 'OPEN' && formConfig?.config?.closeAt && (
+            <div className="stat-card">
+              <span>Time Remaining</span>
+              <strong style={{ fontSize: '1.2rem', color: 'var(--accent)', fontFamily: 'Orbitron, sans-serif' }}>{timeRemaining}</strong>
+            </div>
+          )}
+          <div className="stat-card">
+            <span>Filtered Vault</span>
+            <strong style={{ fontSize: '1.3rem' }}>{filteredSubmissions.length}</strong>
+          </div>
+          <div className="hero-note" style={{ gridColumn: '1 / -1' }}>
+            <p className="section-label" style={{ margin: '0 0 6px 0' }}>Availability & Access Control</p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', fontSize: '0.8rem', color: 'var(--muted)' }}>
+              <span>📅 <strong>Scheduled Open:</strong> {formConfig?.config?.openAt ? new Date(formConfig.config.openAt).toLocaleString() : 'Manual'}</span>
+              <span>📅 <strong>Scheduled Close:</strong> {formConfig?.config?.closeAt ? new Date(formConfig.config.closeAt).toLocaleString() : 'Manual'}</span>
+              <span>🛡️ <strong>Access mode:</strong> {formConfig?.config?.accessMode || 'PUBLIC'}</span>
+            </div>
           </div>
         </div>
       </section>

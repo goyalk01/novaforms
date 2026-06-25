@@ -22,3 +22,15 @@ backend/.env
 # Temporary / OS files
 .DS_Store
 Thumbs.db
+
+# AI Agent Instruction files and generated directories
+AGENT.md
+agent.md
+CLAUDE.md
+.gemini/
+.gemini_worktree/
+*.webp
+*.mp4
+*.gif
+*.png
+

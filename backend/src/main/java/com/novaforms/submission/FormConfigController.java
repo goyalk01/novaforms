@@ -1,5 +1,6 @@
 package com.novaforms.submission;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -15,19 +16,129 @@ public class FormConfigController {
   private final FormConfigRepository formConfigRepository;
   private final CollaboratorRepository collaboratorRepository;
   private final TransferRequestRepository transferRequestRepository;
+  private final SubmissionRepository submissionRepository;
 
   public FormConfigController(
       FormConfigRepository formConfigRepository,
       CollaboratorRepository collaboratorRepository,
-      TransferRequestRepository transferRequestRepository) {
+      TransferRequestRepository transferRequestRepository,
+      SubmissionRepository submissionRepository) {
     this.formConfigRepository = formConfigRepository;
     this.collaboratorRepository = collaboratorRepository;
     this.transferRequestRepository = transferRequestRepository;
+    this.submissionRepository = submissionRepository;
+  }
+
+  // Helper to calculate dynamic lifecycle status
+  private String calculateDynamicStatus(FormConfig config) {
+    if ("ARCHIVED".equalsIgnoreCase(config.getStatus())) {
+      return "ARCHIVED";
+    }
+    if (!Boolean.TRUE.equals(config.getPublished())) {
+      return "DRAFT";
+    }
+    if ("PAUSED".equalsIgnoreCase(config.getStatus())) {
+      return "PAUSED";
+    }
+    if ("CLOSED".equalsIgnoreCase(config.getStatus())) {
+      return "CLOSED";
+    }
+    
+    // Check Scheduled opening
+    if (config.getOpenAt() != null) {
+      if (Instant.now().isBefore(config.getOpenAt())) {
+        return "SCHEDULED";
+      }
+    }
+    
+    // Check Scheduled closing
+    if (config.getCloseAt() != null) {
+      if (Instant.now().isAfter(config.getCloseAt())) {
+        return "CLOSED";
+      }
+    }
+    
+    // Check Max Responses
+    if (config.getMaxResponses() != null && config.getMaxResponses() > 0) {
+      long count = submissionRepository.countByFormId(config.getId());
+      if (count >= config.getMaxResponses()) {
+        return "LIMIT_REACHED";
+      }
+    }
+    
+    return "OPEN";
+  }
+
+  // Clone and sanitize FormConfig to hide sensitive values when password-protected
+  private FormConfig sanitizeFormConfig(FormConfig original, boolean hideSensitive) {
+    FormConfig copy = new FormConfig();
+    copy.setId(original.getId());
+    copy.setName(original.getName());
+    copy.setTitle(original.getTitle());
+    copy.setDescription(original.getDescription());
+    copy.setBannerUrl(original.getBannerUrl());
+    copy.setVideoUrl(original.getVideoUrl());
+    copy.setThemeMode(original.getThemeMode());
+    copy.setLayoutDensity(original.getLayoutDensity());
+    copy.setSubmissionMode(original.getSubmissionMode());
+    copy.setTotalPages(original.getTotalPages());
+    
+    copy.setStatus(original.getStatus());
+    copy.setPublished(original.getPublished());
+    copy.setPublishedAt(original.getPublishedAt());
+    copy.setOpenAt(original.getOpenAt());
+    copy.setCloseAt(original.getCloseAt());
+    copy.setTimezone(original.getTimezone());
+    copy.setAccessMode(original.getAccessMode());
+    // Never expose the password hash to the client
+    copy.setPasswordHash(null);
+    copy.setMaxResponses(original.getMaxResponses());
+    copy.setClosedReason(original.getClosedReason());
+    
+    if (hideSensitive) {
+      copy.setQuestionsJson("[]");
+      copy.setSettingsJson("{}");
+    } else {
+      copy.setQuestionsJson(original.getQuestionsJson());
+      copy.setSettingsJson(original.getSettingsJson());
+    }
+    return copy;
+  }
+
+  private FormConfigResponse getFormConfigResponse(FormConfig config, String email) {
+    boolean hideSensitive = false;
+    if ("PASSWORD_PROTECTED".equalsIgnoreCase(config.getAccessMode())) {
+      hideSensitive = true;
+      if (email != null && !email.isBlank()) {
+        List<Collaborator> collabs = collaboratorRepository.findByFormId(config.getId());
+        boolean isCollab = collabs.stream().anyMatch(c -> c.getEmail().equalsIgnoreCase(email));
+        if (isCollab) {
+          hideSensitive = false;
+        }
+      }
+    }
+    return getFormConfigResponseInternal(config, hideSensitive);
+  }
+
+  private FormConfigResponse getFormConfigResponseInternal(FormConfig config, boolean hideSensitive) {
+    List<Collaborator> collaborators = collaboratorRepository.findByFormId(config.getId());
+    if (config.getId() == 1L && collaborators.isEmpty()) {
+      collaborators = List.of(new Collaborator(1L, "owner@novaforms.com", "OWNER"));
+    }
+
+    Optional<TransferRequest> activeTransfer = transferRequestRepository
+        .findFirstByFormIdAndStatusInOrderByIdDesc(config.getId(), List.of("PENDING", "ACCEPTED"));
+
+    FormConfig sanitized = sanitizeFormConfig(config, hideSensitive);
+    String dynamicStatus = calculateDynamicStatus(config);
+    long submissionCount = submissionRepository.countByFormId(config.getId());
+
+    return new FormConfigResponse(sanitized, collaborators, activeTransfer.orElse(null), dynamicStatus, submissionCount);
   }
 
   // Gets or initializes the singleton form configuration (id=1) - for backwards compatibility
   @GetMapping
-  public FormConfigResponse getConfig() {
+  public FormConfigResponse getConfig(@RequestParam(required = false) String email) {
     FormConfig config = formConfigRepository.findById(1L).orElseGet(() -> {
       FormConfig defaultConf = new FormConfig();
       defaultConf.setId(1L);
@@ -42,18 +153,20 @@ public class FormConfigController {
       defaultConf.setTotalPages(1);
       defaultConf.setBannerUrl("");
       defaultConf.setVideoUrl("");
+      defaultConf.setStatus("DRAFT");
+      defaultConf.setPublished(false);
+      defaultConf.setTimezone("UTC");
+      defaultConf.setAccessMode("PUBLIC");
+      defaultConf.setMaxResponses(0);
       return defaultConf;
     });
 
-    List<Collaborator> collaborators = collaboratorRepository.findByFormId(1L);
-    if (collaborators.isEmpty()) {
-      collaborators = List.of(new Collaborator(1L, "owner@novaforms.com", "OWNER"));
+    // Save default config if not found initially so that it exists in the database
+    if (config.getPublished() == null) {
+      config = formConfigRepository.save(config);
     }
 
-    Optional<TransferRequest> activeTransfer = transferRequestRepository
-        .findFirstByFormIdAndStatusInOrderByIdDesc(1L, List.of("PENDING", "ACCEPTED"));
-
-    return new FormConfigResponse(config, collaborators, activeTransfer.orElse(null));
+    return getFormConfigResponse(config, email);
   }
 
   // Lists all forms a user is involved in
@@ -89,6 +202,11 @@ public class FormConfigController {
     config.setTotalPages(1);
     config.setBannerUrl("");
     config.setVideoUrl("");
+    config.setStatus("DRAFT");
+    config.setPublished(false);
+    config.setTimezone("UTC");
+    config.setAccessMode("PUBLIC");
+    config.setMaxResponses(0);
 
     FormConfig saved = formConfigRepository.save(config);
 
@@ -101,16 +219,11 @@ public class FormConfigController {
 
   // Gets form config by ID
   @GetMapping("/{id}")
-  public FormConfigResponse getConfigById(@PathVariable Long id) {
+  public FormConfigResponse getConfigById(@PathVariable Long id, @RequestParam(required = false) String email) {
     FormConfig config = formConfigRepository.findById(id)
         .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Form config not found"));
 
-    List<Collaborator> collaborators = collaboratorRepository.findByFormId(id);
-
-    Optional<TransferRequest> activeTransfer = transferRequestRepository
-        .findFirstByFormIdAndStatusInOrderByIdDesc(id, List.of("PENDING", "ACCEPTED"));
-
-    return new FormConfigResponse(config, collaborators, activeTransfer.orElse(null));
+    return getFormConfigResponse(config, email);
   }
 
   // Updates form customization fields by ID
@@ -131,7 +244,101 @@ public class FormConfigController {
     config.setSubmissionMode(request.getSubmissionMode());
     config.setTotalPages(request.getTotalPages());
 
+    // Update Lifecycle Fields
+    if (request.getStatus() != null) {
+      config.setStatus(request.getStatus());
+    }
+    if (request.getPublished() != null) {
+      config.setPublished(request.getPublished());
+      if (request.getPublished() && config.getPublishedAt() == null) {
+        config.setPublishedAt(Instant.now());
+      }
+    }
+    config.setOpenAt(request.getOpenAt());
+    config.setCloseAt(request.getCloseAt());
+    if (request.getTimezone() != null) {
+      config.setTimezone(request.getTimezone());
+    }
+    if (request.getAccessMode() != null) {
+      config.setAccessMode(request.getAccessMode());
+      if ("PUBLIC".equalsIgnoreCase(request.getAccessMode())) {
+        config.setPasswordHash(null);
+      } else if ("PASSWORD_PROTECTED".equalsIgnoreCase(request.getAccessMode()) && request.getPassword() != null && !request.getPassword().isBlank()) {
+        config.setPasswordHash(PasswordUtils.hashPassword(request.getPassword()));
+      }
+    }
+    if (request.getMaxResponses() != null) {
+      config.setMaxResponses(request.getMaxResponses());
+    }
+    config.setClosedReason(request.getClosedReason());
+
     return formConfigRepository.save(config);
+  }
+
+  // Form state lifecycle transitions
+  @PostMapping("/{id}/publish")
+  public FormConfigResponse publishForm(@PathVariable Long id) {
+    FormConfig config = formConfigRepository.findById(id)
+        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Form config not found"));
+    config.setPublished(true);
+    config.setPublishedAt(Instant.now());
+    config.setStatus("OPEN");
+    FormConfig saved = formConfigRepository.save(config);
+    return getFormConfigResponse(saved, null);
+  }
+
+  @PostMapping("/{id}/unpublish")
+  public FormConfigResponse unpublishForm(@PathVariable Long id) {
+    FormConfig config = formConfigRepository.findById(id)
+        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Form config not found"));
+    config.setPublished(false);
+    config.setStatus("DRAFT");
+    FormConfig saved = formConfigRepository.save(config);
+    return getFormConfigResponse(saved, null);
+  }
+
+  @PostMapping("/{id}/pause")
+  public FormConfigResponse pauseForm(@PathVariable Long id) {
+    FormConfig config = formConfigRepository.findById(id)
+        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Form config not found"));
+    config.setStatus("PAUSED");
+    FormConfig saved = formConfigRepository.save(config);
+    return getFormConfigResponse(saved, null);
+  }
+
+  @PostMapping("/{id}/resume")
+  public FormConfigResponse resumeForm(@PathVariable Long id) {
+    FormConfig config = formConfigRepository.findById(id)
+        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Form config not found"));
+    config.setStatus("OPEN");
+    FormConfig saved = formConfigRepository.save(config);
+    return getFormConfigResponse(saved, null);
+  }
+
+  @PostMapping("/{id}/archive")
+  public FormConfigResponse archiveForm(@PathVariable Long id) {
+    FormConfig config = formConfigRepository.findById(id)
+        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Form config not found"));
+    config.setStatus("ARCHIVED");
+    FormConfig saved = formConfigRepository.save(config);
+    return getFormConfigResponse(saved, null);
+  }
+
+  // Verify form password challenge and return full configuration response on success
+  @PostMapping("/{id}/verify-password")
+  public FormConfigResponse verifyPassword(@PathVariable Long id, @RequestBody PasswordVerificationRequest request) {
+    FormConfig config = formConfigRepository.findById(id)
+        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Form config not found"));
+
+    if ("PASSWORD_PROTECTED".equalsIgnoreCase(config.getAccessMode())) {
+      if (config.getPasswordHash() != null) {
+        if (request.getPassword() == null || !PasswordUtils.verifyPassword(request.getPassword(), config.getPasswordHash())) {
+          throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Incorrect password");
+        }
+      }
+    }
+
+    return getFormConfigResponseInternal(config, false);
   }
 
   // Adds or updates collaborator by form ID
@@ -239,6 +446,12 @@ public class FormConfigController {
   }
 
   // DTOs & Request Formats
+  public static class PasswordVerificationRequest {
+    private String password;
+    public String getPassword() { return password; }
+    public void setPassword(String password) { this.password = password; }
+  }
+
   public static class FormSummaryResponse {
     private Long id;
     private String name;
@@ -290,6 +503,8 @@ public class FormConfigController {
     private FormConfig config;
     private List<Collaborator> collaborators;
     private TransferRequest activeTransfer;
+    private String dynamicStatus;
+    private long submissionCount;
 
     public FormConfigResponse(FormConfig config, List<Collaborator> collaborators, TransferRequest activeTransfer) {
       this.config = config;
@@ -297,9 +512,21 @@ public class FormConfigController {
       this.activeTransfer = activeTransfer;
     }
 
+    public FormConfigResponse(FormConfig config, List<Collaborator> collaborators, TransferRequest activeTransfer, String dynamicStatus, long submissionCount) {
+      this.config = config;
+      this.collaborators = collaborators;
+      this.activeTransfer = activeTransfer;
+      this.dynamicStatus = dynamicStatus;
+      this.submissionCount = submissionCount;
+    }
+
     public FormConfig getConfig() { return config; }
     public List<Collaborator> getCollaborators() { return collaborators; }
     public TransferRequest getActiveTransfer() { return activeTransfer; }
+    public String getDynamicStatus() { return dynamicStatus; }
+    public void setDynamicStatus(String dynamicStatus) { this.dynamicStatus = dynamicStatus; }
+    public long getSubmissionCount() { return submissionCount; }
+    public void setSubmissionCount(long submissionCount) { this.submissionCount = submissionCount; }
   }
 
   public static class FormConfigRequest {
@@ -314,6 +541,16 @@ public class FormConfigController {
     private String layoutDensity;
     private String submissionMode;
     private Integer totalPages;
+
+    private String status;
+    private Boolean published;
+    private Instant openAt;
+    private Instant closeAt;
+    private String timezone;
+    private String accessMode;
+    private String password;
+    private Integer maxResponses;
+    private String closedReason;
 
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
@@ -337,6 +574,25 @@ public class FormConfigController {
     public void setSubmissionMode(String submissionMode) { this.submissionMode = submissionMode; }
     public Integer getTotalPages() { return totalPages; }
     public void setTotalPages(Integer totalPages) { this.totalPages = totalPages; }
+
+    public String getStatus() { return status; }
+    public void setStatus(String status) { this.status = status; }
+    public Boolean getPublished() { return published; }
+    public void setPublished(Boolean published) { this.published = published; }
+    public Instant getOpenAt() { return openAt; }
+    public void setOpenAt(Instant openAt) { this.openAt = openAt; }
+    public Instant getCloseAt() { return closeAt; }
+    public void setCloseAt(Instant closeAt) { this.closeAt = closeAt; }
+    public String getTimezone() { return timezone; }
+    public void setTimezone(String timezone) { this.timezone = timezone; }
+    public String getAccessMode() { return accessMode; }
+    public void setAccessMode(String accessMode) { this.accessMode = accessMode; }
+    public String getPassword() { return password; }
+    public void setPassword(String password) { this.password = password; }
+    public Integer getMaxResponses() { return maxResponses; }
+    public void setMaxResponses(Integer maxResponses) { this.maxResponses = maxResponses; }
+    public String getClosedReason() { return closedReason; }
+    public void setClosedReason(String closedReason) { this.closedReason = closedReason; }
   }
 
   public static class CollaboratorRequest {
