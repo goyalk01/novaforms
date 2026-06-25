@@ -1,9 +1,0 @@
-{
-  "servers": {
-    "novaforms-backend": {
-      "type": "stdio",
-      "command": "mvn",
-      "args": ["-f", "backend/pom.xml", "spring-boot:run"]
-    }
-  }
-}

@@ -8,3 +8,13 @@ target
 frontend/.env.local
 backend/.env
 *.log
+
+# IDEs and Editors
+.github/
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
