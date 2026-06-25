@@ -6,7 +6,31 @@ import { useAuth } from '../AuthProvider';
 
 type ThemeMode = 'silver' | 'graphite' | 'onyx' | 'cyberpunk';
 type DensityMode = 'compact' | 'comfortable' | 'spacious';
-type QuestionType = 'short-answer' | 'paragraph' | 'multiple-choice' | 'checkboxes' | 'dropdown' | 'scale' | 'date' | 'star-rating';
+type QuestionType = 
+  | 'short-answer'
+  | 'paragraph'
+  | 'multiple-choice'
+  | 'checkboxes'
+  | 'dropdown'
+  | 'scale'
+  | 'date'
+  | 'star-rating'
+  | 'email'
+  | 'phone'
+  | 'number'
+  | 'url'
+  | 'time'
+  | 'datetime'
+  | 'signature'
+  | 'address'
+  | 'slider'
+  | 'emoji-rating'
+  | 'nps'
+  | 'ranking'
+  | 'matrix'
+  | 'checkbox-matrix'
+  | 'file';
+
 type QuestionField = 'fullName' | 'email' | 'company' | 'rating' | undefined;
 
 type Question = {
@@ -21,6 +45,48 @@ type Question = {
   multiplyEnabled?: boolean;
   multiplyTriggerId?: string;
   pageNumber?: number;
+
+  // Linear scale settings
+  scaleMin?: number;
+  scaleLeftLabel?: string;
+  scaleRightLabel?: string;
+
+  // Media attachments
+  mediaUrl?: string;
+  mediaType?: 'image' | 'video' | 'audio' | 'pdf' | 'gif';
+  mediaPosition?: 'above' | 'below';
+
+  // Validation settings
+  placeholder?: string;
+  description?: string;
+  minLength?: number;
+  maxLength?: number;
+  validationRegex?: string;
+  validationMessage?: string;
+  prefix?: string;
+  suffix?: string;
+  defaultValue?: string;
+
+  // Slider settings
+  sliderMin?: number;
+  sliderMax?: number;
+  sliderStep?: number;
+
+  // File upload configuration
+  maxFileSize?: number; // in MB
+  allowedFileTypes?: string[]; // e.g. ['image/*', 'application/pdf']
+  multipleFiles?: boolean;
+  maxFiles?: number;
+
+  // Matrix settings
+  matrixRows?: string[];
+  matrixCols?: string[];
+
+  // Emoji settings
+  emojiType?: 'stars' | 'emojis' | 'hearts';
+
+  // Ranking items
+  rankingItems?: string[];
 };
 
 type Submission = {
@@ -41,6 +107,20 @@ type Submission = {
   createdAt: string;
 };
 
+type SubmissionSettings = {
+  allowEdit: boolean;
+  allowMultiple: boolean;
+  showThankYou: boolean;
+  redirectUrl: string;
+  closeForm: boolean;
+  maxResponses: number;
+  showSubmissionId: boolean;
+  successMessage: string;
+  thankYouTitle: string;
+  thankYouDescription: string;
+  successIllustration: string;
+};
+
 type BuilderState = {
   formTitle: string;
   formDescription: string;
@@ -51,6 +131,7 @@ type BuilderState = {
   totalPages: number;
   bannerUrl: string;
   videoUrl: string;
+  settings: SubmissionSettings;
 };
 
 type AnswerValue = string | string[];
@@ -76,9 +157,24 @@ const questionPalette: Array<{ type: QuestionType; label: string; description: s
   { type: 'multiple-choice', label: 'Multiple choice', description: 'One option' },
   { type: 'checkboxes', label: 'Checkboxes', description: 'Multiple options' },
   { type: 'dropdown', label: 'Dropdown', description: 'Compact select' },
-  { type: 'scale', label: 'Linear scale', description: '1 to 10' },
+  { type: 'scale', label: 'Linear scale', description: 'Custom min/max' },
   { type: 'date', label: 'Date picker', description: 'Calendar date' },
-  { type: 'star-rating', label: 'Star rating', description: '1 to 5 stars' }
+  { type: 'star-rating', label: 'Star rating', description: '1 to 5 stars' },
+  { type: 'email', label: 'Email input', description: 'Verified email format' },
+  { type: 'phone', label: 'Phone input', description: 'Verified phone format' },
+  { type: 'number', label: 'Number input', description: 'Numeric values' },
+  { type: 'url', label: 'URL input', description: 'Web address' },
+  { type: 'time', label: 'Time picker', description: 'Clock time' },
+  { type: 'datetime', label: 'Date & Time picker', description: 'Date with clock' },
+  { type: 'signature', label: 'Signature pad', description: 'Draw on canvas' },
+  { type: 'address', label: 'Address block', description: 'Street, city, state, zip' },
+  { type: 'slider', label: 'Slider', description: 'Numeric range slider' },
+  { type: 'emoji-rating', label: 'Emoji rating', description: 'Hearts / stars / emojis' },
+  { type: 'nps', label: 'NPS rating', description: '0 to 10 scale' },
+  { type: 'ranking', label: 'Ranking list', description: 'Reorder options' },
+  { type: 'matrix', label: 'Single-Choice Grid', description: 'Matrix table (radio)' },
+  { type: 'checkbox-matrix', label: 'Multi-Choice Grid', description: 'Matrix table (checkbox)' },
+  { type: 'file', label: 'File upload', description: 'Upload attachments' }
 ];
 
 const starterQuestions: Question[] = [
@@ -97,7 +193,7 @@ const starterQuestions: Question[] = [
     id: 'q-email',
     title: 'Email address',
     helpText: 'Delivery email.',
-    type: 'short-answer',
+    type: 'email',
     required: true,
     options: [],
     scaleMax: 5,
@@ -122,51 +218,82 @@ const starterQuestions: Question[] = [
     type: 'scale',
     required: true,
     options: [],
+    scaleMin: 1,
     scaleMax: 10,
+    scaleLeftLabel: 'Basic / MVP',
+    scaleRightLabel: 'Stunning / Cyberpunk',
     fieldKey: 'rating',
     pageNumber: 1
   }
 ];
 
-const createQuestion = (type: QuestionType): Question => ({
-  id: `q-${crypto.randomUUID()}`,
-  title:
-    type === 'short-answer'
-      ? 'Untitled short answer'
-      : type === 'paragraph'
-        ? 'Untitled paragraph'
-        : type === 'multiple-choice'
-          ? 'Untitled multiple choice'
-          : type === 'checkboxes'
-            ? 'Untitled checkbox set'
-            : type === 'dropdown'
-              ? 'Untitled dropdown'
-              : type === 'scale'
-                ? 'Untitled scale'
-                : type === 'date'
-                  ? 'Untitled date'
-                  : 'Untitled star rating',
-  helpText: 'Add a short helper line.',
-  type,
-  required: false,
-  options:
-    type === 'multiple-choice'
-      ? ['Option 1', 'Option 2', 'Option 3']
-      : type === 'checkboxes'
-        ? ['Choice 1', 'Choice 2', 'Choice 3']
-        : type === 'dropdown'
-          ? ['Option A', 'Option B', 'Option C']
-          : [],
-  scaleMax: type === 'scale' ? 10 : 5,
-  pageNumber: 1
-});
+const createQuestion = (type: QuestionType): Question => {
+  const base = {
+    id: `q-${crypto.randomUUID()}`,
+    title: `Untitled ${type.replace('-', ' ')}`,
+    helpText: 'Add a short helper line.',
+    type,
+    required: false,
+    options: [],
+    scaleMax: 5,
+    pageNumber: 1
+  };
+
+  switch (type) {
+    case 'multiple-choice':
+      return { ...base, options: ['Option 1', 'Option 2', 'Option 3'] };
+    case 'checkboxes':
+      return { ...base, options: ['Choice 1', 'Choice 2', 'Choice 3'] };
+    case 'dropdown':
+      return { ...base, options: ['Option A', 'Option B', 'Option C'] };
+    case 'scale':
+      return { ...base, scaleMin: 1, scaleMax: 10, scaleLeftLabel: 'Min', scaleRightLabel: 'Max' };
+    case 'slider':
+      return { ...base, sliderMin: 0, sliderMax: 100, sliderStep: 1 };
+    case 'emoji-rating':
+      return { ...base, emojiType: 'emojis' };
+    case 'ranking':
+      return { ...base, rankingItems: ['Rank Item 1', 'Rank Item 2', 'Rank Item 3'] };
+    case 'matrix':
+    case 'checkbox-matrix':
+      return { 
+        ...base, 
+        matrixRows: ['Row 1', 'Row 2'], 
+        matrixCols: ['Col 1', 'Col 2', 'Col 3'] 
+      };
+    case 'file':
+      return { 
+        ...base, 
+        maxFileSize: 10, 
+        allowedFileTypes: ['image/*', 'application/pdf'], 
+        multipleFiles: false, 
+        maxFiles: 1 
+      };
+    default:
+      return base;
+  }
+};
 
 const buildInitialAnswers = (questions: Question[]) =>
   questions.reduce<Record<string, AnswerValue>>((result, question) => {
     if (question.type === 'checkboxes') {
       result[question.id] = [];
-    } else if (question.type === 'scale' || question.type === 'star-rating') {
+    } else if (question.type === 'scale') {
+      result[question.id] = String(question.scaleMin ?? 1);
+    } else if (question.type === 'star-rating' || question.type === 'nps') {
       result[question.id] = '5';
+    } else if (question.type === 'slider') {
+      result[question.id] = String(question.sliderMin ?? 0);
+    } else if (question.type === 'address') {
+      result[question.id] = JSON.stringify({ street: '', city: '', state: '', zip: '' });
+    } else if (question.type === 'matrix' || question.type === 'checkbox-matrix') {
+      const initialGrid: Record<string, string[]> = {};
+      question.matrixRows?.forEach(row => {
+        initialGrid[row] = [];
+      });
+      result[question.id] = JSON.stringify(initialGrid);
+    } else if (question.type === 'ranking') {
+      result[question.id] = JSON.stringify(question.rankingItems ?? []);
     } else {
       result[question.id] = '';
     }
@@ -231,6 +358,20 @@ export default function BuilderPage() {
   );
 }
 
+const defaultSettings: SubmissionSettings = {
+  allowEdit: false,
+  allowMultiple: true,
+  showThankYou: true,
+  redirectUrl: '',
+  closeForm: false,
+  maxResponses: 0,
+  showSubmissionId: false,
+  successMessage: 'Your responses were successfully logged to the NovaForms vault.',
+  thankYouTitle: 'Response Submitted!',
+  thankYouDescription: '',
+  successIllustration: ''
+};
+
 function BuilderComponent() {
   const searchParams = useSearchParams();
   const formId = searchParams.get('id') ?? '1';
@@ -250,7 +391,8 @@ function BuilderComponent() {
         submissionMode: 'standard',
         totalPages: 1,
         bannerUrl: '',
-        videoUrl: ''
+        videoUrl: '',
+        settings: defaultSettings
       };
     }
     return {
@@ -262,7 +404,8 @@ function BuilderComponent() {
       submissionMode: 'standard',
       totalPages: 1,
       bannerUrl: '',
-      videoUrl: ''
+      videoUrl: '',
+      settings: defaultSettings
     };
   });
 
@@ -283,6 +426,8 @@ function BuilderComponent() {
   const [showPublishSuccess, setShowPublishSuccess] = useState(false);
   const [copied, setCopied] = useState(false);
   const [previewPage, setPreviewPage] = useState(1);
+  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved' | 'error'>('saved');
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
 
   const [accentColor, setAccentColor] = useState<string>(() => {
     if (typeof window !== 'undefined') {
@@ -318,6 +463,16 @@ function BuilderComponent() {
     localStorage.setItem('novaforms-density', builder.densityMode);
   }, [builder.densityMode, builder.themeMode]);
 
+  const updateSettings = (key: keyof SubmissionSettings, value: any) => {
+    setBuilder((current) => ({
+      ...current,
+      settings: {
+        ...current.settings,
+        [key]: value
+      }
+    }));
+  };
+
   useEffect(() => {
     const root = document.documentElement;
     root.style.setProperty('--card-radius', borderRadius);
@@ -350,6 +505,14 @@ function BuilderComponent() {
         const data = await res.json();
         const conf = data.config;
         if (conf) {
+          let parsedSettings = defaultSettings;
+          if (conf.settingsJson) {
+            try {
+              parsedSettings = { ...defaultSettings, ...JSON.parse(conf.settingsJson) };
+            } catch (e) {
+              console.error("Failed to parse settingsJson", e);
+            }
+          }
           setBuilder({
             formTitle: conf.title || 'Orbit Intake',
             formDescription: conf.description || '',
@@ -359,7 +522,8 @@ function BuilderComponent() {
             submissionMode: conf.submissionMode || 'standard',
             totalPages: conf.totalPages || 1,
             bannerUrl: conf.bannerUrl || '',
-            videoUrl: conf.videoUrl || ''
+            videoUrl: conf.videoUrl || '',
+            settings: parsedSettings
           });
           if (conf.questionsJson) {
             try {
@@ -377,6 +541,8 @@ function BuilderComponent() {
       }
     } catch (err) {
       console.error("Failed to load config", err);
+    } finally {
+      setIsInitialLoad(false);
     }
   };
 
@@ -409,6 +575,93 @@ function BuilderComponent() {
       }
     };
   }, [formId, currentUser]);
+
+  useEffect(() => {
+    if (isInitialLoad) return;
+
+    setSaveStatus('unsaved');
+    setStatus('Unsaved changes');
+
+    const delayDebounce = setTimeout(async () => {
+      setSaveStatus('saving');
+      setStatus('Saving...');
+      try {
+        const configPayload = {
+          name: builder.workspaceName,
+          title: builder.formTitle,
+          description: builder.formDescription,
+          bannerUrl: builder.bannerUrl,
+          videoUrl: builder.videoUrl,
+          questionsJson: JSON.stringify(questions),
+          settingsJson: JSON.stringify(builder.settings),
+          themeMode: builder.themeMode,
+          layoutDensity: builder.densityMode,
+          submissionMode: builder.submissionMode,
+          totalPages: builder.totalPages
+        };
+        const res = await fetch(`${API_BASE}/api/form-config/${formId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(configPayload)
+        });
+        if (res.ok) {
+          setSaveStatus('saved');
+          setStatus('All changes saved');
+        } else {
+          setSaveStatus('error');
+          setStatus('Save error');
+        }
+      } catch (err) {
+        console.error("Autosave failed", err);
+        setSaveStatus('error');
+        setStatus('Offline');
+      }
+    }, 1500);
+
+    return () => clearTimeout(delayDebounce);
+  }, [
+    isInitialLoad,
+    questions,
+    builder.formTitle,
+    builder.formDescription,
+    builder.workspaceName,
+    builder.bannerUrl,
+    builder.videoUrl,
+    builder.themeMode,
+    builder.densityMode,
+    builder.submissionMode,
+    builder.totalPages,
+    builder.settings,
+    formId
+  ]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (saveStatus === 'unsaved' || saveStatus === 'saving') {
+        const msg = 'You have unsaved changes in your form builder. Are you sure you want to leave?';
+        e.returnValue = msg;
+        return msg;
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [saveStatus]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        const formEl = document.querySelector('form.canvas') as HTMLFormElement | null;
+        if (formEl) {
+          formEl.requestSubmit();
+        }
+      } else if (e.key === 'Escape') {
+        setShowPublishSuccess(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const statistics = useMemo(
     () => [
@@ -808,18 +1061,430 @@ function BuilderComponent() {
       ) : null}
 
       {question.type === 'scale' ? (
-        <label>
-          Scale maximum
-          <input
-            type="range"
-            min="5"
-            max="10"
-            value={String(question.scaleMax)}
-            onChange={(event) => updateQuestion(question.id, (current) => ({ ...current, scaleMax: Number(event.target.value) }))}
-          />
-          <span className="helper">Preview max: {question.scaleMax}</span>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px' }}>
+          <div className="grid two" style={{ gap: '10px' }}>
+            <label>
+              Scale Minimum
+              <select
+                value={question.scaleMin !== undefined ? question.scaleMin : 1}
+                onChange={(e) => updateQuestion(question.id, (q) => ({ ...q, scaleMin: Number(e.target.value) }))}
+                style={{ fontSize: '0.8rem', padding: '6px' }}
+              >
+                <option value="0">0</option>
+                <option value="1">1</option>
+                <option value="5">5</option>
+              </select>
+            </label>
+            <label>
+              Scale Maximum
+              <select
+                value={question.scaleMax !== undefined ? question.scaleMax : 10}
+                onChange={(e) => updateQuestion(question.id, (q) => ({ ...q, scaleMax: Number(e.target.value) }))}
+                style={{ fontSize: '0.8rem', padding: '6px' }}
+              >
+                {[3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20].map(val => (
+                  <option key={val} value={val}>{val}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="grid two" style={{ gap: '10px' }}>
+            <label>
+              Left label (e.g. Worst)
+              <input
+                type="text"
+                value={question.scaleLeftLabel || ''}
+                onChange={(e) => updateQuestion(question.id, (q) => ({ ...q, scaleLeftLabel: e.target.value }))}
+                style={{ fontSize: '0.8rem', padding: '6px' }}
+              />
+            </label>
+            <label>
+              Right label (e.g. Best)
+              <input
+                type="text"
+                value={question.scaleRightLabel || ''}
+                onChange={(e) => updateQuestion(question.id, (q) => ({ ...q, scaleRightLabel: e.target.value }))}
+                style={{ fontSize: '0.8rem', padding: '6px' }}
+              />
+            </label>
+          </div>
+        </div>
+      ) : null}
+
+      {question.type === 'slider' ? (
+        <div className="grid three" style={{ gap: '10px', marginTop: '10px' }}>
+          <label>
+            Slider Min Value
+            <input
+              type="number"
+              value={question.sliderMin !== undefined ? question.sliderMin : 0}
+              onChange={(e) => updateQuestion(question.id, (q) => ({ ...q, sliderMin: Number(e.target.value) }))}
+              style={{ fontSize: '0.8rem', padding: '6px' }}
+            />
+          </label>
+          <label>
+            Slider Max Value
+            <input
+              type="number"
+              value={question.sliderMax !== undefined ? question.sliderMax : 100}
+              onChange={(e) => updateQuestion(question.id, (q) => ({ ...q, sliderMax: Number(e.target.value) }))}
+              style={{ fontSize: '0.8rem', padding: '6px' }}
+            />
+          </label>
+          <label>
+            Slider Step
+            <input
+              type="number"
+              value={question.sliderStep !== undefined ? question.sliderStep : 1}
+              onChange={(e) => updateQuestion(question.id, (q) => ({ ...q, sliderStep: Number(e.target.value) }))}
+              style={{ fontSize: '0.8rem', padding: '6px' }}
+            />
+          </label>
+        </div>
+      ) : null}
+
+      {question.type === 'emoji-rating' ? (
+        <label style={{ marginTop: '10px' }}>
+          Rating Icon Type
+          <select
+            value={question.emojiType || 'emojis'}
+            onChange={(e) => updateQuestion(question.id, (q) => ({ ...q, emojiType: e.target.value as any }))}
+            style={{ fontSize: '0.8rem', padding: '6px' }}
+          >
+            <option value="stars">Stars ⭐</option>
+            <option value="emojis">Emojis 😄</option>
+            <option value="hearts">Hearts ❤️</option>
+          </select>
         </label>
       ) : null}
+
+      {question.type === 'ranking' ? (
+        <div style={{ marginTop: '12px' }}>
+          <div className="question-head mini">
+            <span style={{ fontSize: '0.72rem', color: 'var(--muted)', fontWeight: 'bold' }}>Items to Rank</span>
+            <button
+              type="button"
+              className="ghost-button"
+              onClick={() => {
+                const items = question.rankingItems || [];
+                updateQuestion(question.id, (q) => ({
+                  ...q,
+                  rankingItems: [...items, `Rank Item ${items.length + 1}`]
+                }));
+              }}
+            >
+              Add Item
+            </button>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '6px' }}>
+            {(question.rankingItems || []).map((item, idx) => (
+              <div key={idx} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <input
+                  type="text"
+                  value={item}
+                  onChange={(e) => {
+                    const next = [...(question.rankingItems || [])];
+                    next[idx] = e.target.value;
+                    updateQuestion(question.id, (q) => ({ ...q, rankingItems: next }));
+                  }}
+                  style={{ flex: 1, fontSize: '0.8rem', padding: '6px' }}
+                />
+                <button
+                  type="button"
+                  className="icon-button"
+                  onClick={() => {
+                    const next = (question.rankingItems || []).filter((_, i) => i !== idx);
+                    updateQuestion(question.id, (q) => ({ ...q, rankingItems: next }));
+                  }}
+                >
+                  −
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {(question.type === 'matrix' || question.type === 'checkbox-matrix') ? (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginTop: '12px' }}>
+          <div>
+            <div className="question-head mini">
+              <span style={{ fontSize: '0.72rem', color: 'var(--muted)', fontWeight: 'bold' }}>Rows (Statements)</span>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => {
+                  const rows = question.matrixRows || [];
+                  updateQuestion(question.id, (q) => ({
+                    ...q,
+                    matrixRows: [...rows, `Row ${rows.length + 1}`]
+                  }));
+                }}
+              >
+                Add Row
+              </button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '6px' }}>
+              {(question.matrixRows || []).map((row, idx) => (
+                <div key={idx} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <input
+                    type="text"
+                    value={row}
+                    onChange={(e) => {
+                      const next = [...(question.matrixRows || [])];
+                      next[idx] = e.target.value;
+                      updateQuestion(question.id, (q) => ({ ...q, matrixRows: next }));
+                    }}
+                    style={{ flex: 1, fontSize: '0.8rem', padding: '6px' }}
+                  />
+                  <button
+                    type="button"
+                    className="icon-button"
+                    onClick={() => {
+                      const next = (question.matrixRows || []).filter((_, i) => i !== idx);
+                      updateQuestion(question.id, (q) => ({ ...q, matrixRows: next }));
+                    }}
+                  >
+                    −
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div className="question-head mini">
+              <span style={{ fontSize: '0.72rem', color: 'var(--muted)', fontWeight: 'bold' }}>Columns (Choices)</span>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => {
+                  const cols = question.matrixCols || [];
+                  updateQuestion(question.id, (q) => ({
+                    ...q,
+                    matrixCols: [...cols, `Col ${cols.length + 1}`]
+                  }));
+                }}
+              >
+                Add Col
+              </button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '6px' }}>
+              {(question.matrixCols || []).map((col, idx) => (
+                <div key={idx} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <input
+                    type="text"
+                    value={col}
+                    onChange={(e) => {
+                      const next = [...(question.matrixCols || [])];
+                      next[idx] = e.target.value;
+                      updateQuestion(question.id, (q) => ({ ...q, matrixCols: next }));
+                    }}
+                    style={{ flex: 1, fontSize: '0.8rem', padding: '6px' }}
+                  />
+                  <button
+                    type="button"
+                    className="icon-button"
+                    onClick={() => {
+                      const next = (question.matrixCols || []).filter((_, i) => i !== idx);
+                      updateQuestion(question.id, (q) => ({ ...q, matrixCols: next }));
+                    }}
+                  >
+                    −
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {question.type === 'file' ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px' }}>
+          <div className="grid three" style={{ gap: '10px' }}>
+            <label>
+              Max File Size (MB)
+              <input
+                type="number"
+                value={question.maxFileSize !== undefined ? question.maxFileSize : 10}
+                onChange={(e) => updateQuestion(question.id, (q) => ({ ...q, maxFileSize: Number(e.target.value) }))}
+                style={{ fontSize: '0.8rem', padding: '6px' }}
+              />
+            </label>
+            <label style={{ display: 'flex', alignContent: 'center', justifyContent: 'center', flexDirection: 'column', cursor: 'pointer' }}>
+              <span style={{ fontSize: '0.85rem' }}>Allow Multiple Files</span>
+              <input
+                type="checkbox"
+                checked={question.multipleFiles || false}
+                onChange={(e) => updateQuestion(question.id, (q) => ({ ...q, multipleFiles: e.target.checked }))}
+                style={{ width: '16px', height: '16px', accentColor: 'var(--accent)', marginTop: '4px' }}
+              />
+            </label>
+            {question.multipleFiles && (
+              <label>
+                Max Files Count
+                <input
+                  type="number"
+                  min="1"
+                  value={question.maxFiles !== undefined ? question.maxFiles : 5}
+                  onChange={(e) => updateQuestion(question.id, (q) => ({ ...q, maxFiles: Number(e.target.value) }))}
+                  style={{ fontSize: '0.8rem', padding: '6px' }}
+                />
+              </label>
+            )}
+          </div>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <span>Allowed File Extensions (comma separated, e.g. .jpg, .png, .pdf)</span>
+            <input
+              type="text"
+              placeholder=".jpg, .png, .pdf, .zip"
+              value={(question.allowedFileTypes || []).join(', ')}
+              onChange={(e) => {
+                const types = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
+                updateQuestion(question.id, (q) => ({ ...q, allowedFileTypes: types }));
+              }}
+              style={{ fontSize: '0.8rem', padding: '6px' }}
+            />
+          </label>
+        </div>
+      ) : null}
+
+      {/* Media Attachments Section */}
+      <div style={{ borderTop: '1px solid var(--border)', paddingTop: '12px', marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <h4 style={{ fontSize: '0.8rem', color: 'var(--accent)', margin: 0 }}>Question Media Block</h4>
+        <div className="grid three" style={{ gap: '10px' }}>
+          <label>
+            Media URL
+            <input
+              type="text"
+              placeholder="e.g. https://images.unsplash.com/..."
+              value={question.mediaUrl || ''}
+              onChange={(e) => updateQuestion(question.id, (q) => ({ ...q, mediaUrl: e.target.value }))}
+              style={{ fontSize: '0.8rem', padding: '6px' }}
+            />
+          </label>
+          <label>
+            Media Type
+            <select
+              value={question.mediaType || 'image'}
+              onChange={(e) => updateQuestion(question.id, (q) => ({ ...q, mediaType: e.target.value as any }))}
+              style={{ fontSize: '0.8rem', padding: '6px' }}
+            >
+              <option value="image">Image</option>
+              <option value="gif">GIF</option>
+              <option value="video">Video</option>
+              <option value="audio">Audio</option>
+              <option value="pdf">PDF Document</option>
+            </select>
+          </label>
+          <label>
+            Position
+            <select
+              value={question.mediaPosition || 'above'}
+              onChange={(e) => updateQuestion(question.id, (q) => ({ ...q, mediaPosition: e.target.value as any }))}
+              style={{ fontSize: '0.8rem', padding: '6px' }}
+            >
+              <option value="above">Above Question Text</option>
+              <option value="below">Below Question Text</option>
+            </select>
+          </label>
+        </div>
+      </div>
+
+      {/* Advanced Validation Section */}
+      <details style={{ marginTop: '12px', borderTop: '1px solid var(--border)', paddingTop: '12px', cursor: 'pointer' }}>
+        <summary style={{ fontSize: '0.82rem', color: 'var(--accent)', fontWeight: 'bold', outline: 'none' }}>
+          Advanced Validation & Constraints
+        </summary>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '12px', cursor: 'default' }} onClick={(e) => e.stopPropagation()}>
+          <div className="grid two" style={{ gap: '10px' }}>
+            <label>
+              Placeholder Text
+              <input
+                type="text"
+                value={question.placeholder || ''}
+                onChange={(e) => updateQuestion(question.id, (q) => ({ ...q, placeholder: e.target.value }))}
+                style={{ fontSize: '0.8rem', padding: '6px' }}
+              />
+            </label>
+            <label>
+              Default Value
+              <input
+                type="text"
+                value={question.defaultValue || ''}
+                onChange={(e) => updateQuestion(question.id, (q) => ({ ...q, defaultValue: e.target.value }))}
+                style={{ fontSize: '0.8rem', padding: '6px' }}
+              />
+            </label>
+          </div>
+
+          <div className="grid two" style={{ gap: '10px' }}>
+            <label>
+              Prefix Icon / Label
+              <input
+                type="text"
+                placeholder="e.g. $"
+                value={question.prefix || ''}
+                onChange={(e) => updateQuestion(question.id, (q) => ({ ...q, prefix: e.target.value }))}
+                style={{ fontSize: '0.8rem', padding: '6px' }}
+              />
+            </label>
+            <label>
+              Suffix Label
+              <input
+                type="text"
+                placeholder="e.g. kg / hrs"
+                value={question.suffix || ''}
+                onChange={(e) => updateQuestion(question.id, (q) => ({ ...q, suffix: e.target.value }))}
+                style={{ fontSize: '0.8rem', padding: '6px' }}
+              />
+            </label>
+          </div>
+
+          <div className="grid two" style={{ gap: '10px' }}>
+            <label>
+              Min Length / Min Value
+              <input
+                type="number"
+                value={question.minLength !== undefined ? question.minLength : ''}
+                onChange={(e) => updateQuestion(question.id, (q) => ({ ...q, minLength: e.target.value !== '' ? Number(e.target.value) : undefined }))}
+                style={{ fontSize: '0.8rem', padding: '6px' }}
+              />
+            </label>
+            <label>
+              Max Length / Max Value
+              <input
+                type="number"
+                value={question.maxLength !== undefined ? question.maxLength : ''}
+                onChange={(e) => updateQuestion(question.id, (q) => ({ ...q, maxLength: e.target.value !== '' ? Number(e.target.value) : undefined }))}
+                style={{ fontSize: '0.8rem', padding: '6px' }}
+              />
+            </label>
+          </div>
+
+          <div className="grid two" style={{ gap: '10px' }}>
+            <label>
+              Custom Regex Pattern
+              <input
+                type="text"
+                placeholder="e.g. ^[0-9]{5}$"
+                value={question.validationRegex || ''}
+                onChange={(e) => updateQuestion(question.id, (q) => ({ ...q, validationRegex: e.target.value }))}
+                style={{ fontSize: '0.8rem', padding: '6px' }}
+              />
+            </label>
+            <label>
+              Regex Validation Message
+              <input
+                type="text"
+                placeholder="Invalid value error message"
+                value={question.validationMessage || ''}
+                onChange={(e) => updateQuestion(question.id, (q) => ({ ...q, validationMessage: e.target.value }))}
+                style={{ fontSize: '0.8rem', padding: '6px' }}
+              />
+            </label>
+          </div>
+        </div>
+      </details>
     </article>
   ); };
 
@@ -833,202 +1498,598 @@ function BuilderComponent() {
     };
     const count = getMultiplierCount();
 
-    if (question.type === 'date') {
-      return (
-        <div key={question.id} className="preview-card">
-          <span className="preview-label">{question.title}</span>
-          <span className="preview-help">{question.helpText}</span>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
-            {Array.from({ length: count }).map((_, idx) => {
-              const val = Array.isArray(value) ? value[idx] || '' : idx === 0 ? (value as string || '') : '';
-              return (
-                <input
-                  key={idx}
-                  type="date"
-                  value={val}
-                  onChange={(event) => {
-                    if (count > 1) {
-                      const next = Array.isArray(value) ? [...value] : [typeof value === 'string' ? value : ''];
-                      while (next.length < count) next.push('');
-                      next[idx] = event.target.value;
-                      setAnswer(question.id, next);
-                    } else {
-                      setAnswer(question.id, event.target.value);
-                    }
-                  }}
+    const renderQuestionMedia = (q: Question) => {
+      if (!q.mediaUrl) return null;
+      const mediaStyle = {
+        maxWidth: '100%',
+        maxHeight: '260px',
+        borderRadius: '8px',
+        marginTop: '8px',
+        marginBottom: '8px',
+        border: '1px solid var(--border)',
+        display: 'block'
+      };
+      switch (q.mediaType) {
+        case 'image':
+        case 'gif':
+          return <img src={q.mediaUrl} alt={q.title} style={mediaStyle} />;
+        case 'video':
+          if (q.mediaUrl.includes('youtube.com') || q.mediaUrl.includes('youtu.be')) {
+            return (
+              <div className="video-embed-wrapper" style={{ marginTop: '8px', marginBottom: '8px', height: '220px' }}>
+                <iframe
+                  src={getYouTubeEmbedUrl(q.mediaUrl)}
+                  title="Question video"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                  style={{ width: '100%', height: '100%', borderRadius: '8px', border: 'none' }}
                 />
-              );
-            })}
-          </div>
-        </div>
-      );
-    }
+              </div>
+            );
+          }
+          return <video src={q.mediaUrl} controls style={mediaStyle} />;
+        case 'audio':
+          return <audio src={q.mediaUrl} controls style={{ width: '100%', marginTop: '8px', marginBottom: '8px' }} />;
+        case 'pdf':
+          return (
+            <div style={{ marginTop: '8px', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: '8px' }}>
+              <span style={{ fontSize: '1.3rem' }}>📄</span>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>PDF Document</span>
+                <a href={q.mediaUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', fontSize: '0.75rem', textDecoration: 'underline' }}>
+                  View PDF / File
+                </a>
+              </div>
+            </div>
+          );
+        default:
+          return null;
+      }
+    };
 
-    if (question.type === 'star-rating') {
-      const ratingVal = Number(value || '5');
+    const renderInputFields = (inputType: string) => {
       return (
-        <div key={question.id} className="preview-card">
-          <span className="preview-label">{question.title}</span>
-          <span className="preview-help">{question.helpText}</span>
-          <div className="star-row">
-            {[1, 2, 3, 4, 5].map((star) => (
-              <button
-                key={star}
-                type="button"
-                className={star <= ratingVal ? 'star-btn active' : 'star-btn'}
-                onClick={() => setAnswer(question.id, String(star))}
-              >
-                ★
-              </button>
-            ))}
-          </div>
-        </div>
-      );
-    }
-
-    if (question.type === 'paragraph') {
-      return (
-        <div key={question.id} className="preview-card">
-          <span className="preview-label">{question.title}</span>
-          <span className="preview-help">{question.helpText}</span>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
-            {Array.from({ length: count }).map((_, idx) => {
-              const val = Array.isArray(value) ? value[idx] || '' : idx === 0 ? (value as string || '') : '';
-              return (
-                <textarea
-                  key={idx}
-                  rows={4}
-                  placeholder={count > 1 ? `Participant ${idx + 1} details` : ''}
-                  value={val}
-                  onChange={(event) => {
-                    if (count > 1) {
-                      const next = Array.isArray(value) ? [...value] : [typeof value === 'string' ? value : ''];
-                      while (next.length < count) next.push('');
-                      next[idx] = event.target.value;
-                      setAnswer(question.id, next);
-                    } else {
-                      setAnswer(question.id, event.target.value);
-                    }
-                  }}
-                />
-              );
-            })}
-          </div>
-        </div>
-      );
-    }
-
-    if (question.type === 'short-answer') {
-      return (
-        <div key={question.id} className="preview-card">
-          <span className="preview-label">{question.title}</span>
-          <span className="preview-help">{question.helpText}</span>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
-            {Array.from({ length: count }).map((_, idx) => {
-              const val = Array.isArray(value) ? value[idx] || '' : idx === 0 ? (value as string || '') : '';
-              return (
-                <input
-                  key={idx}
-                  type="text"
-                  placeholder={count > 1 ? `Participant ${idx + 1} answer` : ''}
-                  value={val}
-                  onChange={(event) => {
-                    if (count > 1) {
-                      const next = Array.isArray(value) ? [...value] : [typeof value === 'string' ? value : ''];
-                      while (next.length < count) next.push('');
-                      next[idx] = event.target.value;
-                      setAnswer(question.id, next);
-                    } else {
-                      setAnswer(question.id, event.target.value);
-                    }
-                  }}
-                />
-              );
-            })}
-          </div>
-        </div>
-      );
-    }
-
-    if (question.type === 'dropdown') {
-      return (
-        <label key={question.id} className="preview-card">
-          <span className="preview-label">{question.title}</span>
-          <span className="preview-help">{question.helpText}</span>
-          <select value={typeof value === 'string' ? value : ''} onChange={(event) => setAnswer(question.id, event.target.value)}>
-            <option value="">Choose an option</option>
-            {question.options.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
-        </label>
-      );
-    }
-
-    if (question.type === 'multiple-choice') {
-      return (
-        <fieldset key={question.id} className="preview-card">
-          <legend className="preview-label">{question.title}</legend>
-          <span className="preview-help">{question.helpText}</span>
-          <div className="choice-stack">
-            {question.options.map((option) => (
-              <label key={option} className="choice-item">
-                <input
-                  type="radio"
-                  name={question.id}
-                  value={option}
-                  checked={typeof value === 'string' && value === option}
-                  onChange={(event) => setAnswer(question.id, event.target.value)}
-                />
-                <span>{option}</span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
-      );
-    }
-
-    if (question.type === 'checkboxes') {
-      const selected = Array.isArray(value) ? value : [];
-
-      return (
-        <fieldset key={question.id} className="preview-card">
-          <legend className="preview-label">{question.title}</legend>
-          <span className="preview-help">{question.helpText}</span>
-          <div className="choice-stack">
-            {question.options.map((option) => (
-              <label key={option} className="choice-item">
-                <input
-                  type="checkbox"
-                  checked={selected.includes(option)}
-                  onChange={(event) => {
-                    const next = event.target.checked ? [...selected, option] : selected.filter((item) => item !== option);
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
+          {Array.from({ length: count }).map((_, idx) => {
+            const val = Array.isArray(value) ? value[idx] || '' : idx === 0 ? (value as string || '') : '';
+            const inputEl = (
+              <input
+                key={idx}
+                type={inputType}
+                placeholder={question.placeholder || (count > 1 ? `Participant ${idx + 1} answer` : '')}
+                value={val}
+                onChange={(event) => {
+                  if (count > 1) {
+                    const next = Array.isArray(value) ? [...value] : [typeof value === 'string' ? value : ''];
+                    while (next.length < count) next.push('');
+                    next[idx] = event.target.value;
                     setAnswer(question.id, next);
-                  }}
-                />
-                <span>{option}</span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
+                  } else {
+                    setAnswer(question.id, event.target.value);
+                  }
+                }}
+              />
+            );
+            return (question.prefix || question.suffix) ? (
+              <div key={idx} style={{ display: 'flex', alignItems: 'stretch', gap: '0', borderRadius: 'var(--card-radius)', overflow: 'hidden', border: '1px solid var(--border)', background: 'var(--bg-soft)' }}>
+                {question.prefix && <span style={{ display: 'flex', alignItems: 'center', padding: '0 12px', background: 'rgba(255,255,255,0.05)', borderRight: '1px solid var(--border)', fontSize: '0.85rem', color: 'var(--muted)' }}>{question.prefix}</span>}
+                <div style={{ flex: 1 }}>
+                  <input
+                    type={inputType}
+                    placeholder={question.placeholder || ''}
+                    value={val}
+                    onChange={(event) => {
+                      if (count > 1) {
+                        const next = Array.isArray(value) ? [...value] : [typeof value === 'string' ? value : ''];
+                        while (next.length < count) next.push('');
+                        next[idx] = event.target.value;
+                        setAnswer(question.id, next);
+                      } else {
+                        setAnswer(question.id, event.target.value);
+                      }
+                    }}
+                    style={{ border: 'none', borderRadius: 0, width: '100%', background: 'transparent' }}
+                  />
+                </div>
+                {question.suffix && <span style={{ display: 'flex', alignItems: 'center', padding: '0 12px', background: 'rgba(255,255,255,0.05)', borderLeft: '1px solid var(--border)', fontSize: '0.85rem', color: 'var(--muted)' }}>{question.suffix}</span>}
+              </div>
+            ) : inputEl;
+          })}
+        </div>
       );
-    }
+    };
+
+    const renderMainInput = () => {
+      switch (question.type) {
+        case 'short-answer':
+          return renderInputFields('text');
+        case 'email':
+          return renderInputFields('email');
+        case 'phone':
+          return renderInputFields('tel');
+        case 'number':
+          return renderInputFields('number');
+        case 'url':
+          return renderInputFields('url');
+        case 'time':
+          return renderInputFields('time');
+        case 'datetime':
+          return renderInputFields('datetime-local');
+        case 'date':
+          return renderInputFields('date');
+
+        case 'paragraph':
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
+              {Array.from({ length: count }).map((_, idx) => {
+                const val = Array.isArray(value) ? value[idx] || '' : idx === 0 ? (value as string || '') : '';
+                return (
+                  <textarea
+                    key={idx}
+                    rows={4}
+                    placeholder={question.placeholder || (count > 1 ? `Participant ${idx + 1} details` : '')}
+                    value={val}
+                    onChange={(event) => {
+                      if (count > 1) {
+                        const next = Array.isArray(value) ? [...value] : [typeof value === 'string' ? value : ''];
+                        while (next.length < count) next.push('');
+                        next[idx] = event.target.value;
+                        setAnswer(question.id, next);
+                      } else {
+                        setAnswer(question.id, event.target.value);
+                      }
+                    }}
+                  />
+                );
+              })}
+            </div>
+          );
+
+        case 'dropdown':
+          return (
+            <select value={typeof value === 'string' ? value : ''} onChange={(event) => setAnswer(question.id, event.target.value)} style={{ marginTop: '4px' }}>
+              <option value="">Choose an option</option>
+              {question.options.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          );
+
+        case 'multiple-choice':
+          return (
+            <div className="choice-stack" style={{ marginTop: '6px' }}>
+              {question.options.map((option) => (
+                <label key={option} className="choice-item">
+                  <input
+                    type="radio"
+                    name={question.id}
+                    value={option}
+                    checked={typeof value === 'string' && value === option}
+                    onChange={(event) => setAnswer(question.id, event.target.value)}
+                  />
+                  <span>{option}</span>
+                </label>
+              ))}
+            </div>
+          );
+
+        case 'checkboxes':
+          const selected = Array.isArray(value) ? value : [];
+          return (
+            <div className="choice-stack" style={{ marginTop: '6px' }}>
+              {question.options.map((option) => (
+                <label key={option} className="choice-item">
+                  <input
+                    type="checkbox"
+                    checked={selected.includes(option)}
+                    onChange={(event) => {
+                      const next = event.target.checked ? [...selected, option] : selected.filter((item) => item !== option);
+                      setAnswer(question.id, next);
+                    }}
+                  />
+                  <span>{option}</span>
+                </label>
+              ))}
+            </div>
+          );
+
+        case 'star-rating':
+          const ratingVal = Number(value || '5');
+          return (
+            <div className="star-row" style={{ marginTop: '6px' }}>
+              {[1, 2, 3, 4, 5].map((star) => (
+                <button
+                  key={star}
+                  type="button"
+                  className={star <= ratingVal ? 'star-btn active' : 'star-btn'}
+                  onClick={() => setAnswer(question.id, String(star))}
+                >
+                  ★
+                </button>
+              ))}
+            </div>
+          );
+
+        case 'scale':
+          const scaleMinVal = question.scaleMin !== undefined ? question.scaleMin : 1;
+          const scaleMaxVal = question.scaleMax !== undefined ? question.scaleMax : 10;
+          const scaleCurrent = value !== undefined ? Number(value) : scaleMinVal;
+          return (
+            <div className="scale-wrap" style={{ marginTop: '10px' }}>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: '8px' }}>
+                {Array.from({ length: scaleMaxVal - scaleMinVal + 1 }).map((_, idx) => {
+                  const num = scaleMinVal + idx;
+                  const isActive = scaleCurrent === num;
+                  return (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() => setAnswer(question.id, String(num))}
+                      style={{
+                        width: '36px',
+                        height: '36px',
+                        borderRadius: '50%',
+                        border: isActive ? '2px solid var(--accent)' : '1px solid var(--border)',
+                        background: isActive ? 'var(--accent-glow)' : 'rgba(255,255,255,0.02)',
+                        color: isActive ? 'var(--accent)' : 'var(--text)',
+                        fontWeight: 'bold',
+                        cursor: 'pointer',
+                        fontSize: '0.85rem'
+                      }}
+                    >
+                      {num}
+                    </button>
+                  );
+                })}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: 'var(--muted)' }}>
+                <span>{question.scaleLeftLabel || `${scaleMinVal}`}</span>
+                <span>{question.scaleRightLabel || `${scaleMaxVal}`}</span>
+              </div>
+            </div>
+          );
+
+        case 'slider':
+          const sMin = question.sliderMin !== undefined ? question.sliderMin : 0;
+          const sMax = question.sliderMax !== undefined ? question.sliderMax : 100;
+          const sStep = question.sliderStep !== undefined ? question.sliderStep : 1;
+          const sVal = value !== undefined ? value : String(sMin);
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
+              <input
+                type="range"
+                min={sMin}
+                max={sMax}
+                step={sStep}
+                value={sVal}
+                onChange={(e) => setAnswer(question.id, e.target.value)}
+                style={{ width: '100%', accentColor: 'var(--accent)' }}
+              />
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: 'var(--muted)' }}>
+                <span>{sMin}</span>
+                <span style={{ color: 'var(--accent)', fontWeight: 'bold' }}>{sVal}</span>
+                <span>{sMax}</span>
+              </div>
+            </div>
+          );
+
+        case 'emoji-rating':
+          const eVal = Number(value || '3');
+          const icons = question.emojiType === 'hearts' 
+            ? ['❤️', '❤️', '❤️', '❤️', '❤️']
+            : question.emojiType === 'emojis'
+              ? ['😠', '🙁', '😐', '🙂', '😄']
+              : ['★', '★', '★', '★', '★'];
+          return (
+            <div style={{ display: 'flex', gap: '12px', marginTop: '8px', fontSize: '1.6rem' }}>
+              {icons.map((icon, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    opacity: idx < eVal ? 1 : 0.25,
+                    transform: idx < eVal ? 'scale(1.15)' : 'scale(1)',
+                    transition: 'all 0.2s ease',
+                    padding: 0
+                  }}
+                  onClick={() => setAnswer(question.id, String(idx + 1))}
+                >
+                  {icon}
+                </button>
+              ))}
+            </div>
+          );
+
+        case 'nps':
+          const npsCurrent = value !== undefined ? Number(value) : -1;
+          return (
+            <div style={{ marginTop: '8px' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                {Array.from({ length: 11 }).map((_, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    style={{
+                      width: '34px',
+                      height: '34px',
+                      padding: 0,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderRadius: '8px',
+                      border: npsCurrent === idx ? '2px solid var(--accent)' : '1px solid var(--border)',
+                      background: npsCurrent === idx ? 'var(--accent-glow)' : 'rgba(255,255,255,0.02)',
+                      color: npsCurrent === idx ? 'var(--accent)' : 'var(--text)',
+                      fontWeight: 'bold',
+                      cursor: 'pointer',
+                      fontSize: '0.85rem'
+                    }}
+                    onClick={() => setAnswer(question.id, String(idx))}
+                  >
+                    {idx}
+                  </button>
+                ))}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--muted)', marginTop: '8px' }}>
+                <span>Not likely at all</span>
+                <span>Extremely likely</span>
+              </div>
+            </div>
+          );
+
+        case 'ranking':
+          let list: string[] = [];
+          try {
+            list = typeof value === 'string' ? JSON.parse(value) : Array.isArray(value) ? value : [];
+          } catch {}
+          if (list.length === 0) {
+            list = question.rankingItems || [];
+          }
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
+              {list.map((item, idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '8px 12px',
+                    background: 'rgba(255,255,255,0.02)',
+                    border: '1px solid var(--border)',
+                    borderRadius: '8px',
+                    fontSize: '0.85rem'
+                  }}
+                >
+                  <span>{item}</span>
+                  <div style={{ display: 'flex', gap: '4px' }}>
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      style={{ padding: '2px 6px', fontSize: '0.7rem' }}
+                      disabled={idx === 0}
+                      onClick={() => {
+                        const next = [...list];
+                        const temp = next[idx];
+                        next[idx] = next[idx - 1];
+                        next[idx - 1] = temp;
+                        setAnswer(question.id, JSON.stringify(next));
+                      }}
+                    >
+                      ▲
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      style={{ padding: '2px 6px', fontSize: '0.7rem' }}
+                      disabled={idx === list.length - 1}
+                      onClick={() => {
+                        const next = [...list];
+                        const temp = next[idx];
+                        next[idx] = next[idx + 1];
+                        next[idx + 1] = temp;
+                        setAnswer(question.id, JSON.stringify(next));
+                      }}
+                    >
+                      ▼
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          );
+
+        case 'matrix':
+        case 'checkbox-matrix':
+          let mGrid: Record<string, string[]> = {};
+          try {
+            mGrid = typeof value === 'string' ? JSON.parse(value) : {};
+          } catch {}
+          const rows = question.matrixRows || [];
+          const cols = question.matrixCols || [];
+          return (
+            <div style={{ overflowX: 'auto', marginTop: '8px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '380px' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                    <th style={{ padding: '8px', textAlign: 'left', fontSize: '0.75rem', color: 'var(--muted)' }}>Statement</th>
+                    {cols.map(c => (
+                      <th key={c} style={{ padding: '8px', textAlign: 'center', fontSize: '0.75rem', color: 'var(--muted)' }}>{c}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map(r => {
+                    const selections = mGrid[r] || [];
+                    return (
+                      <tr key={r} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                        <td style={{ padding: '8px', fontSize: '0.85rem', fontWeight: 'bold' }}>{r}</td>
+                        {cols.map(c => {
+                          const isSel = selections.includes(c);
+                          return (
+                            <td key={c} style={{ padding: '8px', textAlign: 'center' }}>
+                              <input
+                                type={question.type === 'matrix' ? 'radio' : 'checkbox'}
+                                name={`${question.id}-${r}`}
+                                checked={isSel}
+                                onChange={(e) => {
+                                  const next = { ...mGrid };
+                                  if (question.type === 'matrix') {
+                                    next[r] = e.target.checked ? [c] : [];
+                                  } else {
+                                    const currentSelections = next[r] || [];
+                                    next[r] = e.target.checked 
+                                      ? [...currentSelections, c]
+                                      : currentSelections.filter(colItem => colItem !== c);
+                                  }
+                                  setAnswer(question.id, JSON.stringify(next));
+                                }}
+                                style={{ cursor: 'pointer' }}
+                              />
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          );
+
+        case 'address':
+          let addressData: Record<string, string> = { street: '', city: '', state: '', zip: '' };
+          try {
+            addressData = typeof value === 'string' ? JSON.parse(value) : {};
+          } catch {}
+          const changeAddress = (fieldKey: string, val: string) => {
+            const next = { ...addressData, [fieldKey]: val };
+            setAnswer(question.id, JSON.stringify(next));
+          };
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
+              <input
+                type="text"
+                placeholder="Street Address"
+                value={addressData.street || ''}
+                onChange={(e) => changeAddress('street', e.target.value)}
+              />
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '8px' }}>
+                <input
+                  type="text"
+                  placeholder="City"
+                  value={addressData.city || ''}
+                  onChange={(e) => changeAddress('city', e.target.value)}
+                />
+                <input
+                  type="text"
+                  placeholder="State"
+                  value={addressData.state || ''}
+                  onChange={(e) => changeAddress('state', e.target.value)}
+                />
+                <input
+                  type="text"
+                  placeholder="ZIP"
+                  value={addressData.zip || ''}
+                  onChange={(e) => changeAddress('zip', e.target.value)}
+                />
+              </div>
+            </div>
+          );
+
+        case 'signature':
+          return (
+            <div style={{ marginTop: '8px' }}>
+              <div 
+                style={{
+                  width: '100%',
+                  height: '110px',
+                  border: '1px dashed var(--border)',
+                  background: 'rgba(0,0,0,0.15)',
+                  borderRadius: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'var(--muted)',
+                  fontSize: '0.8rem',
+                  position: 'relative'
+                }}
+              >
+                {value ? (
+                  <img src={value as string} alt="Signature Preview" style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain' }} />
+                ) : (
+                  <span>[Signature Pad - Draw on public form]</span>
+                )}
+                {value && (
+                  <button
+                    type="button"
+                    style={{ position: 'absolute', bottom: '4px', right: '4px', fontSize: '0.7rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(255,255,255,0.08)', border: 'none', cursor: 'pointer' }}
+                    onClick={() => setAnswer(question.id, '')}
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+
+        case 'file':
+          const filesList: string[] = typeof value === 'string' ? [value] : Array.isArray(value) ? value : [];
+          return (
+            <div style={{ marginTop: '8px' }}>
+              <div
+                style={{
+                  border: '2px dashed var(--border)',
+                  borderRadius: '12px',
+                  padding: '16px 12px',
+                  textAlign: 'center',
+                  background: 'rgba(255,255,255,0.01)',
+                  cursor: 'pointer'
+                }}
+                onClick={() => alert("File Upload: Mock selection in live preview.")}
+              >
+                <span style={{ fontSize: '1.3rem', display: 'block', marginBottom: '4px' }}>📤</span>
+                <strong style={{ fontSize: '0.8rem' }}>Upload files</strong>
+                <p style={{ fontSize: '0.7rem', color: 'var(--muted)', margin: '2px 0 0' }}>
+                  Limit: {question.maxFileSize || 10} MB. Supported: {question.allowedFileTypes?.join(', ') || 'Any'}
+                </p>
+              </div>
+              {filesList.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '8px' }}>
+                  {filesList.map((fileUrl, index) => (
+                    <div key={index} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 8px', background: 'rgba(255,255,255,0.03)', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.75rem' }}>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '80%' }}>{fileUrl}</span>
+                      <button type="button" className="ghost-button danger" style={{ padding: '1px 4px', fontSize: '0.65rem' }} onClick={() => {
+                        const next = filesList.filter((_, i) => i !== index);
+                        setAnswer(question.id, next.length > 0 ? next : '');
+                      }}>Delete</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+
+        default:
+          return null;
+      }
+    };
 
     return (
-      <label key={question.id} className="preview-card">
-        <span className="preview-label">{question.title}</span>
-        <span className="preview-help">{question.helpText}</span>
-        <div className="scale-wrap">
-          <input type="range" min="1" max={String(question.scaleMax)} value={typeof value === 'string' ? value : '5'} onChange={(event) => setAnswer(question.id, event.target.value)} />
-          <div className="scale-labels">
-            <span>1</span>
-            <span>{typeof value === 'string' ? value : '5'}</span>
-            <span>{question.scaleMax}</span>
-          </div>
-        </div>
-      </label>
+      <div key={question.id} className="preview-card">
+        {question.mediaPosition === 'above' && renderQuestionMedia(question)}
+        <span className="preview-label">
+          {question.title} {question.required && <span style={{ color: 'var(--accent)' }}>*</span>}
+        </span>
+        {question.helpText && <span className="preview-help">{question.helpText}</span>}
+        {renderMainInput()}
+        {question.mediaPosition === 'below' && renderQuestionMedia(question)}
+      </div>
     );
   };
 
@@ -1085,6 +2146,7 @@ function BuilderComponent() {
         bannerUrl: builder.bannerUrl,
         videoUrl: builder.videoUrl,
         questionsJson: JSON.stringify(questions),
+        settingsJson: JSON.stringify(builder.settings),
         themeMode: builder.themeMode,
         layoutDensity: builder.densityMode,
         submissionMode: builder.submissionMode,
@@ -1107,7 +2169,8 @@ function BuilderComponent() {
         totalPages: builder.totalPages,
         bannerUrl: builder.bannerUrl,
         videoUrl: builder.videoUrl,
-        questions: questions
+        questions: questions,
+        settings: builder.settings
       };
       localStorage.setItem('novaforms-published-form', JSON.stringify(formConfig));
 
@@ -1121,6 +2184,33 @@ function BuilderComponent() {
       setLoading(false);
     }
   };
+
+  if (isInitialLoad) {
+    return (
+      <main className="shell forms-app skeleton-loading">
+        <section className="hero">
+          <div className="hero-copy">
+            <div className="skeleton-line" style={{ width: '120px', height: '14px', marginBottom: '8px' }}></div>
+            <div className="skeleton-line" style={{ width: '80%', height: '48px', marginBottom: '16px' }}></div>
+            <div className="skeleton-line" style={{ width: '60%', height: '20px' }}></div>
+          </div>
+          <div className="hero-panel" style={{ display: 'flex', gap: '16px' }}>
+            <div className="stat-card skeleton-box" style={{ height: '80px', flex: 1 }}></div>
+            <div className="stat-card skeleton-box" style={{ height: '80px', flex: 1 }}></div>
+          </div>
+        </section>
+        <section className="workspace" style={{ display: 'grid', gridTemplateColumns: '320px 1fr 340px', gap: '24px' }}>
+          <aside className="rail skeleton-box" style={{ height: '600px' }}></aside>
+          <div className="canvas skeleton-box" style={{ height: '600px', padding: '24px' }}>
+            <div className="skeleton-line" style={{ width: '40%', height: '24px', marginBottom: '16px' }}></div>
+            <div className="skeleton-line" style={{ width: '100%', height: '140px', marginBottom: '16px' }}></div>
+            <div className="skeleton-line" style={{ width: '100%', height: '140px' }}></div>
+          </div>
+          <aside className="vault skeleton-box" style={{ height: '600px' }}></aside>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <main className="shell forms-app">
@@ -1414,6 +2504,118 @@ function BuilderComponent() {
               >
                 +
               </button>
+            </div>
+          </div>
+
+          <div className="rail-block">
+            <p className="section-label">Submission Settings</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <label style={{ display: 'flex', alignContent: 'center', justifyContent: 'space-between', flexDirection: 'row', cursor: 'pointer' }}>
+                <span>Allow Editing</span>
+                <input
+                  type="checkbox"
+                  checked={builder.settings.allowEdit}
+                  onChange={(e) => updateSettings('allowEdit', e.target.checked)}
+                  style={{ width: '16px', height: '16px', accentColor: 'var(--accent)', margin: 0 }}
+                />
+              </label>
+
+              <label style={{ display: 'flex', alignContent: 'center', justifyContent: 'space-between', flexDirection: 'row', cursor: 'pointer' }}>
+                <span>Allow Multiple Responses</span>
+                <input
+                  type="checkbox"
+                  checked={builder.settings.allowMultiple}
+                  onChange={(e) => updateSettings('allowMultiple', e.target.checked)}
+                  style={{ width: '16px', height: '16px', accentColor: 'var(--accent)', margin: 0 }}
+                />
+              </label>
+
+              <label style={{ display: 'flex', alignContent: 'center', justifyContent: 'space-between', flexDirection: 'row', cursor: 'pointer' }}>
+                <span>Show Thank You Page</span>
+                <input
+                  type="checkbox"
+                  checked={builder.settings.showThankYou}
+                  onChange={(e) => updateSettings('showThankYou', e.target.checked)}
+                  style={{ width: '16px', height: '16px', accentColor: 'var(--accent)', margin: 0 }}
+                />
+              </label>
+
+              {builder.settings.showThankYou && (
+                <>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>Thank You Title</span>
+                    <input
+                      type="text"
+                      value={builder.settings.thankYouTitle}
+                      onChange={(e) => updateSettings('thankYouTitle', e.target.value)}
+                      style={{ fontSize: '0.8rem', padding: '6px' }}
+                    />
+                  </label>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>Thank You Desc</span>
+                    <textarea
+                      rows={2}
+                      value={builder.settings.thankYouDescription}
+                      onChange={(e) => updateSettings('thankYouDescription', e.target.value)}
+                      style={{ fontSize: '0.8rem', padding: '6px', resize: 'vertical' }}
+                    />
+                  </label>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>Illustration Preset</span>
+                    <select
+                      value={builder.settings.successIllustration}
+                      onChange={(e) => updateSettings('successIllustration', e.target.value)}
+                      style={{ fontSize: '0.8rem', padding: '6px' }}
+                    >
+                      <option value="">None</option>
+                      <option value="confetti">Confetti 🎉</option>
+                      <option value="cyber-globe">Cyber Globe 🌐</option>
+                      <option value="space-launch">Space Launch 🚀</option>
+                    </select>
+                  </label>
+                  <label style={{ display: 'flex', alignContent: 'center', justifyContent: 'space-between', flexDirection: 'row', cursor: 'pointer' }}>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>Show Response ID</span>
+                    <input
+                      type="checkbox"
+                      checked={builder.settings.showSubmissionId}
+                      onChange={(e) => updateSettings('showSubmissionId', e.target.checked)}
+                      style={{ width: '16px', height: '16px', accentColor: 'var(--accent)', margin: 0 }}
+                    />
+                  </label>
+                </>
+              )}
+
+              <label style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>Redirect URL on Success</span>
+                <input
+                  type="text"
+                  placeholder="https://example.com/success"
+                  value={builder.settings.redirectUrl}
+                  onChange={(e) => updateSettings('redirectUrl', e.target.value)}
+                  style={{ fontSize: '0.8rem', padding: '6px' }}
+                />
+              </label>
+
+              <label style={{ display: 'flex', alignContent: 'center', justifyContent: 'space-between', flexDirection: 'row', cursor: 'pointer' }}>
+                <span>Close to submissions</span>
+                <input
+                  type="checkbox"
+                  checked={builder.settings.closeForm}
+                  onChange={(e) => updateSettings('closeForm', e.target.checked)}
+                  style={{ width: '16px', height: '16px', accentColor: 'var(--accent)', margin: 0 }}
+                />
+              </label>
+
+              <label style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>Max Responses (0 = Unlimited)</span>
+                <input
+                  type="number"
+                  min="0"
+                  value={builder.settings.maxResponses}
+                  onChange={(e) => updateSettings('maxResponses', Number(e.target.value))}
+                  style={{ fontSize: '0.8rem', padding: '6px' }}
+                />
+              </label>
             </div>
           </div>
 

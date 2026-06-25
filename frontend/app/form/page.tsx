@@ -1,9 +1,33 @@
 'use client';
 
-import { FormEvent, useEffect, useState, Suspense } from 'react';
+import { FormEvent, useEffect, useState, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 
-type QuestionType = 'short-answer' | 'paragraph' | 'multiple-choice' | 'checkboxes' | 'dropdown' | 'scale' | 'date' | 'star-rating';
+type QuestionType = 
+  | 'short-answer'
+  | 'paragraph'
+  | 'multiple-choice'
+  | 'checkboxes'
+  | 'dropdown'
+  | 'scale'
+  | 'date'
+  | 'star-rating'
+  | 'email'
+  | 'phone'
+  | 'number'
+  | 'url'
+  | 'time'
+  | 'datetime'
+  | 'signature'
+  | 'address'
+  | 'slider'
+  | 'emoji-rating'
+  | 'nps'
+  | 'ranking'
+  | 'matrix'
+  | 'checkbox-matrix'
+  | 'file';
+
 type QuestionField = 'fullName' | 'email' | 'company' | 'rating' | undefined;
 
 type Question = {
@@ -18,6 +42,62 @@ type Question = {
   multiplyEnabled?: boolean;
   multiplyTriggerId?: string;
   pageNumber?: number;
+
+  // Linear scale settings
+  scaleMin?: number;
+  scaleLeftLabel?: string;
+  scaleRightLabel?: string;
+
+  // Media attachments
+  mediaUrl?: string;
+  mediaType?: 'image' | 'video' | 'audio' | 'pdf' | 'gif';
+  mediaPosition?: 'above' | 'below';
+
+  // Validation settings
+  placeholder?: string;
+  description?: string;
+  minLength?: number;
+  maxLength?: number;
+  validationRegex?: string;
+  validationMessage?: string;
+  prefix?: string;
+  suffix?: string;
+  defaultValue?: string;
+
+  // Slider settings
+  sliderMin?: number;
+  sliderMax?: number;
+  sliderStep?: number;
+
+  // File upload configuration
+  maxFileSize?: number; // in MB
+  allowedFileTypes?: string[]; // e.g. ['image/*', 'application/pdf']
+  multipleFiles?: boolean;
+  maxFiles?: number;
+
+  // Matrix settings
+  matrixRows?: string[];
+  matrixCols?: string[];
+
+  // Emoji settings
+  emojiType?: 'stars' | 'emojis' | 'hearts';
+
+  // Ranking items
+  rankingItems?: string[];
+};
+
+type SubmissionSettings = {
+  allowEdit: boolean;
+  allowMultiple: boolean;
+  showThankYou: boolean;
+  redirectUrl: string;
+  closeForm: boolean;
+  maxResponses: number;
+  showSubmissionId: boolean;
+  successMessage: string;
+  thankYouTitle: string;
+  thankYouDescription: string;
+  successIllustration: string;
 };
 
 type AnswerValue = string | string[];
@@ -66,9 +146,245 @@ export default function PublicFormPage() {
   );
 }
 
+const defaultSettings: SubmissionSettings = {
+  allowEdit: false,
+  allowMultiple: true,
+  showThankYou: true,
+  redirectUrl: '',
+  closeForm: false,
+  maxResponses: 0,
+  showSubmissionId: false,
+  successMessage: 'Your responses were successfully logged to the NovaForms vault.',
+  thankYouTitle: 'Response Submitted!',
+  thankYouDescription: '',
+  successIllustration: ''
+};
+
+function SignaturePad({ value, onChange }: { value: string; onChange: (val: string) => void }) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+
+  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.strokeStyle = '#a5b4fc';
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+
+    const rect = canvas.getBoundingClientRect();
+    const x = ('touches' in e) ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
+    const y = ('touches' in e) ? e.touches[0].clientY - rect.top : e.clientY - rect.top;
+
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    setIsDrawing(true);
+  };
+
+  const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    if (!isDrawing) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const x = ('touches' in e) ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
+    const y = ('touches' in e) ? e.touches[0].clientY - rect.top : e.clientY - rect.top;
+
+    ctx.lineTo(x, y);
+    ctx.stroke();
+  };
+
+  const stopDrawing = () => {
+    if (!isDrawing) return;
+    setIsDrawing(false);
+    const canvas = canvasRef.current;
+    if (canvas) {
+      onChange(canvas.toDataURL('image/png'));
+    }
+  };
+
+  const clear = () => {
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
+      onChange('');
+    }
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      <canvas
+        ref={canvasRef}
+        width={500}
+        height={150}
+        onMouseDown={startDrawing}
+        onMouseMove={draw}
+        onMouseUp={stopDrawing}
+        onMouseLeave={stopDrawing}
+        onTouchStart={startDrawing}
+        onTouchMove={draw}
+        onTouchEnd={stopDrawing}
+        style={{
+          width: '100%',
+          height: '150px',
+          border: '1px dashed var(--border)',
+          background: 'rgba(0,0,0,0.2)',
+          borderRadius: '8px',
+          cursor: 'crosshair',
+          touchAction: 'none'
+        }}
+      />
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <button type="button" className="ghost-button danger" style={{ padding: '4px 10px', fontSize: '0.75rem' }} onClick={clear}>
+          Clear Signature
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function FileUpload({ 
+  maxFileSize, 
+  allowedFileTypes, 
+  multipleFiles, 
+  maxFiles, 
+  value, 
+  onChange 
+}: { 
+  maxFileSize?: number;
+  allowedFileTypes?: string[];
+  multipleFiles?: boolean;
+  maxFiles?: number;
+  value: AnswerValue;
+  onChange: (val: AnswerValue) => void;
+}) {
+  const [uploading, setUploading] = useState(false);
+  const filesList: string[] = typeof value === 'string' ? (value ? [value] : []) : Array.isArray(value) ? value : [];
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const sizeInMB = file.size / (1024 * 1024);
+    const limitMB = maxFileSize || 10;
+    if (sizeInMB > limitMB) {
+      alert(`File size exceeds limit of ${limitMB}MB`);
+      return;
+    }
+
+    if (allowedFileTypes && allowedFileTypes.length > 0) {
+      const extension = '.' + file.name.split('.').pop()?.toLowerCase();
+      const isAllowed = allowedFileTypes.some(type => {
+        if (type.startsWith('.')) return extension === type.toLowerCase();
+        if (type.endsWith('/*')) {
+          const prefix = type.split('/')[0];
+          return file.type.startsWith(prefix);
+        }
+        return file.type === type;
+      });
+      if (!isAllowed) {
+        alert(`Allowed formats: ${allowedFileTypes.join(', ')}`);
+        return;
+      }
+    }
+
+    if (multipleFiles && maxFiles && filesList.length >= maxFiles) {
+      alert(`Maximum file count reached: ${maxFiles}`);
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    setUploading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/storage/upload`, {
+        method: 'POST',
+        body: formData
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.url) {
+          if (multipleFiles) {
+            onChange([...filesList, data.url]);
+          } else {
+            onChange(data.url);
+          }
+        }
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error || "File upload failed");
+      }
+    } catch {
+      alert("Network error uploading file");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const removeFile = (idx: number) => {
+    const next = filesList.filter((_, i) => i !== idx);
+    onChange(multipleFiles ? next : (next[0] || ''));
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      <label
+        style={{
+          border: '2px dashed var(--border)',
+          borderRadius: '12px',
+          padding: '24px 16px',
+          textAlign: 'center',
+          background: 'rgba(255,255,255,0.01)',
+          cursor: uploading ? 'not-allowed' : 'pointer',
+          display: 'block'
+        }}
+      >
+        <span style={{ fontSize: '1.8rem', display: 'block', marginBottom: '8px' }}>
+          {uploading ? '⏳' : '📤'}
+        </span>
+        <strong style={{ fontSize: '0.9rem' }}>
+          {uploading ? 'Uploading attachment...' : 'Select file to upload'}
+        </strong>
+        <p style={{ fontSize: '0.75rem', color: 'var(--muted)', margin: '4px 0 0' }}>
+          Size limit: {maxFileSize || 10} MB. Formats: {allowedFileTypes?.join(', ') || 'Any'}
+        </p>
+        <input 
+          type="file" 
+          disabled={uploading} 
+          onChange={handleUpload} 
+          style={{ display: 'none' }} 
+        />
+      </label>
+      {filesList.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px' }}>
+          {filesList.map((url, idx) => (
+            <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 12px', background: 'rgba(255,255,255,0.03)', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.8rem' }}>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '80%' }}>
+                {url.split('/').pop()}
+              </span>
+              <button type="button" className="ghost-button danger" style={{ padding: '2px 8px', fontSize: '0.7rem' }} onClick={() => removeFile(idx)}>
+                Remove
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function FormIntakeComponent() {
   const searchParams = useSearchParams();
   const formId = searchParams.get('id') ?? '1';
+  const submissionId = searchParams.get('submissionId');
 
   const [formConfig, setFormConfig] = useState<{
     title: string;
@@ -81,16 +397,23 @@ function FormIntakeComponent() {
     bannerUrl?: string;
     videoUrl?: string;
     questions: Question[];
+    settings: SubmissionSettings;
   } | null>(null);
 
   const [answers, setAnswers] = useState<Record<string, AnswerValue>>({});
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [newSubmissionId, setNewSubmissionId] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  const [responseCount, setResponseCount] = useState(0);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editingSubmissionId, setEditingSubmissionId] = useState<string | null>(null);
 
   useEffect(() => {
     const loadFormConfig = async () => {
+      let loadedConfig: any = null;
+
       try {
         const response = await fetch(`${API_BASE}/api/form-config/${formId}`, { cache: 'no-store' });
         if (response.ok) {
@@ -103,7 +426,15 @@ function FormIntakeComponent() {
             } catch (err) {
               console.error("Failed to parse questionsJson:", err);
             }
-            const config = {
+            let parsedSettings = defaultSettings;
+            if (conf.settingsJson) {
+              try {
+                parsedSettings = { ...defaultSettings, ...JSON.parse(conf.settingsJson) };
+              } catch (e) {
+                console.error("Failed to parse settingsJson", e);
+              }
+            }
+            loadedConfig = {
               title: conf.title || 'Orbit Intake',
               description: conf.description || '',
               workspaceName: conf.name || 'Nova Studio',
@@ -113,61 +444,113 @@ function FormIntakeComponent() {
               totalPages: conf.totalPages || 1,
               bannerUrl: conf.bannerUrl || '',
               videoUrl: conf.videoUrl || '',
-              questions
+              questions,
+              settings: parsedSettings
             };
-            setFormConfig(config);
-            initAnswers(questions);
-            applyThemeStyles(config.theme, config.density);
-            return;
           }
         }
       } catch (err) {
         console.error("Failed to fetch form config from API", err);
       }
 
-      // Try local storage
-      const saved = localStorage.getItem('novaforms-published-form');
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          setFormConfig(parsed);
-          initAnswers(parsed.questions);
-          applyThemeStyles(parsed.theme, parsed.density);
-          return;
-        } catch (e) {
-          console.error("Failed to parse local storage configuration", e);
+      if (!loadedConfig) {
+        // Try local storage
+        const saved = localStorage.getItem('novaforms-published-form');
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            loadedConfig = {
+              ...parsed,
+              settings: parsed.settings || defaultSettings
+            };
+          } catch (e) {
+            console.error("Failed to parse local storage configuration", e);
+          }
         }
       }
 
-      // Fallback defaults
-      const defaultQuestions: Question[] = [
-        { id: 'q-name', title: 'Full name', helpText: 'Required', type: 'short-answer', required: true, options: [], scaleMax: 5, fieldKey: 'fullName' },
-        { id: 'q-email', title: 'Email address', helpText: 'Required', type: 'short-answer', required: true, options: [], scaleMax: 5, fieldKey: 'email' },
-        { id: 'q-msg', title: 'Additional feedback', helpText: 'Optional', type: 'paragraph', required: false, options: [], scaleMax: 5 }
-      ];
-      const config = {
-        title: 'Form Submission Intake',
-        description: 'Please fill out this dynamic form response.',
-        workspaceName: 'Nova Forms',
-        theme: 'silver',
-        density: 'comfortable',
-        submissionMode: 'standard',
-        questions: defaultQuestions
-      };
-      setFormConfig(config);
-      initAnswers(defaultQuestions);
-      applyThemeStyles('silver', 'comfortable');
+      if (!loadedConfig) {
+        // Fallback defaults
+        const defaultQuestions: Question[] = [
+          { id: 'q-name', title: 'Full name', helpText: 'Required', type: 'short-answer', required: true, options: [], scaleMax: 5, fieldKey: 'fullName' },
+          { id: 'q-email', title: 'Email address', helpText: 'Required', type: 'email', required: true, options: [], scaleMax: 5, fieldKey: 'email' },
+          { id: 'q-msg', title: 'Additional feedback', helpText: 'Optional', type: 'paragraph', required: false, options: [], scaleMax: 5 }
+        ];
+        loadedConfig = {
+          title: 'Form Submission Intake',
+          description: 'Please fill out this dynamic form response.',
+          workspaceName: 'Nova Forms',
+          theme: 'silver',
+          density: 'comfortable',
+          submissionMode: 'standard',
+          questions: defaultQuestions,
+          settings: defaultSettings
+        };
+      }
+
+      setFormConfig(loadedConfig);
+      initAnswers(loadedConfig.questions);
+      applyThemeStyles(loadedConfig.theme, loadedConfig.density);
+
+      // Fetch response count to enforce constraints
+      try {
+        const submissionsRes = await fetch(`${API_BASE}/api/submissions?formId=${formId}`, { cache: 'no-store' });
+        if (submissionsRes.ok) {
+          const submissionsData = await submissionsRes.json();
+          setResponseCount(submissionsData.length);
+        }
+      } catch (err) {
+        console.error("Failed to fetch submission count", err);
+      }
+
+      // Check edit mode
+      if (submissionId && loadedConfig.settings.allowEdit) {
+        try {
+          const subRes = await fetch(`${API_BASE}/api/submissions/${submissionId}`);
+          if (subRes.ok) {
+            const subData = await subRes.json();
+            if (subData.answersJson) {
+              try {
+                const parsedAnswers = JSON.parse(subData.answersJson);
+                setAnswers((prev) => ({ ...prev, ...parsedAnswers }));
+                setIsEditing(true);
+                setEditingSubmissionId(submissionId);
+              } catch (e) {
+                console.error("Failed to parse answersJson from edit target", e);
+              }
+            }
+          }
+        } catch (err) {
+          console.error("Failed to load submission for editing", err);
+        }
+      }
     };
 
     void loadFormConfig();
-  }, [formId]);
+  }, [formId, submissionId]);
 
   const initAnswers = (questions: Question[]) => {
     const initial = questions.reduce<Record<string, AnswerValue>>((acc, q) => {
-      if (q.type === 'checkboxes') {
+      if (q.defaultValue) {
+        acc[q.id] = q.defaultValue;
+      } else if (q.type === 'checkboxes') {
         acc[q.id] = [];
-      } else if (q.type === 'scale' || q.type === 'star-rating') {
+      } else if (q.type === 'scale') {
+        acc[q.id] = String(q.scaleMin ?? 1);
+      } else if (q.type === 'star-rating' || q.type === 'nps') {
         acc[q.id] = '5';
+      } else if (q.type === 'slider') {
+        acc[q.id] = String(q.sliderMin ?? 0);
+      } else if (q.type === 'address') {
+        acc[q.id] = JSON.stringify({ street: '', city: '', state: '', zip: '' });
+      } else if (q.type === 'matrix' || q.type === 'checkbox-matrix') {
+        const initialGrid: Record<string, string[]> = {};
+        q.matrixRows?.forEach(row => {
+          initialGrid[row] = [];
+        });
+        acc[q.id] = JSON.stringify(initialGrid);
+      } else if (q.type === 'ranking') {
+        acc[q.id] = JSON.stringify(q.rankingItems ?? []);
       } else {
         acc[q.id] = '';
       }
@@ -218,6 +601,148 @@ function FormIntakeComponent() {
     setLoading(true);
     setErrorMsg('');
 
+    // Validation Engine
+    let isValid = true;
+    let errorFields: string[] = [];
+
+    for (const q of formConfig.questions) {
+      const val = answers[q.id];
+      const hasValue = (val !== undefined && val !== null && val !== '');
+
+      // Required Check
+      if (q.required) {
+        if (!hasValue) {
+          isValid = false;
+          errorFields.push(`"${q.title}" is required.`);
+          continue;
+        }
+        if (Array.isArray(val) && val.length === 0) {
+          isValid = false;
+          errorFields.push(`"${q.title}" is required.`);
+          continue;
+        }
+        if (q.type === 'address') {
+          try {
+            const addr = JSON.parse(val as string);
+            if (!addr.street || !addr.city || !addr.state || !addr.zip) {
+              isValid = false;
+              errorFields.push(`"${q.title}" (complete address) is required.`);
+              continue;
+            }
+          } catch {
+            isValid = false;
+            errorFields.push(`"${q.title}" is required.`);
+            continue;
+          }
+        }
+        if (q.type === 'matrix' || q.type === 'checkbox-matrix') {
+          try {
+            const grid = JSON.parse(val as string);
+            const incomplete = q.matrixRows?.some(r => !grid[r] || grid[r].length === 0);
+            if (incomplete) {
+              isValid = false;
+              errorFields.push(`"${q.title}" requires an answer for each row.`);
+              continue;
+            }
+          } catch {
+            isValid = false;
+            errorFields.push(`"${q.title}" is required.`);
+            continue;
+          }
+        }
+      }
+
+      // Format & Range constraints if filled
+      if (hasValue && typeof val === 'string') {
+        const valStr = val.trim();
+
+        // Email check
+        if (q.type === 'email') {
+          const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+          if (!emailPattern.test(valStr)) {
+            isValid = false;
+            errorFields.push(`"${q.title}" must be a valid email address.`);
+            continue;
+          }
+        }
+
+        // Phone check
+        if (q.type === 'phone') {
+          const phonePattern = /^\+?[0-9\s\-()]{7,20}$/;
+          if (!phonePattern.test(valStr)) {
+            isValid = false;
+            errorFields.push(`"${q.title}" must be a valid phone number.`);
+            continue;
+          }
+        }
+
+        // URL check
+        if (q.type === 'url') {
+          try {
+            new URL(valStr);
+          } catch {
+            isValid = false;
+            errorFields.push(`"${q.title}" must be a valid website URL.`);
+            continue;
+          }
+        }
+
+        // Number check
+        if (q.type === 'number') {
+          if (isNaN(Number(valStr))) {
+            isValid = false;
+            errorFields.push(`"${q.title}" must be a number.`);
+            continue;
+          }
+          const num = Number(valStr);
+          if (q.minLength !== undefined && num < q.minLength) {
+            isValid = false;
+            errorFields.push(`"${q.title}" must be at least ${q.minLength}.`);
+            continue;
+          }
+          if (q.maxLength !== undefined && num > q.maxLength) {
+            isValid = false;
+            errorFields.push(`"${q.title}" cannot exceed ${q.maxLength}.`);
+            continue;
+          }
+        }
+
+        // Min/Max Length check for text
+        if (q.type === 'short-answer' || q.type === 'paragraph') {
+          if (q.minLength !== undefined && valStr.length < q.minLength) {
+            isValid = false;
+            errorFields.push(`"${q.title}" must be at least ${q.minLength} characters.`);
+            continue;
+          }
+          if (q.maxLength !== undefined && valStr.length > q.maxLength) {
+            isValid = false;
+            errorFields.push(`"${q.title}" cannot exceed ${q.maxLength} characters.`);
+            continue;
+          }
+        }
+
+        // Custom Regex check
+        if (q.validationRegex) {
+          try {
+            const rx = new RegExp(q.validationRegex);
+            if (!rx.test(valStr)) {
+              isValid = false;
+              errorFields.push(q.validationMessage || `"${q.title}" has an invalid format.`);
+              continue;
+            }
+          } catch (e) {
+            console.error("Regex validation compile error", e);
+          }
+        }
+      }
+    }
+
+    if (!isValid) {
+      setErrorMsg(errorFields.join(' '));
+      setLoading(false);
+      return;
+    }
+
     // Locate mappings or guess values
     const fullNameVal = fieldAnswer('fullName') || (typeof answers[formConfig.questions.find(q => q.fieldKey === 'fullName')?.id ?? ''] === 'string' ? answers[formConfig.questions.find(q => q.fieldKey === 'fullName')?.id ?? ''] as string : '') || 'Guest User';
     const emailVal = fieldAnswer('email') || (typeof answers[formConfig.questions.find(q => q.fieldKey === 'email')?.id ?? ''] === 'string' ? answers[formConfig.questions.find(q => q.fieldKey === 'email')?.id ?? ''] as string : '') || 'guest@novaforms.io';
@@ -244,16 +769,43 @@ function FormIntakeComponent() {
     };
 
     try {
-      const response = await fetch(`${API_BASE}/api/submissions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
+      let response;
+      if (isEditing && editingSubmissionId) {
+        response = await fetch(`${API_BASE}/api/submissions/${editingSubmissionId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      } else {
+        response = await fetch(`${API_BASE}/api/submissions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      }
 
       if (!response.ok) {
         throw new Error('Submit failed');
       }
+
+      const resData = await response.json();
+      if (resData && resData.id) {
+        setNewSubmissionId(resData.id);
+      }
+
+      const settings = formConfig.settings;
+      if (settings.redirectUrl && !settings.showThankYou) {
+        window.location.href = settings.redirectUrl;
+        return;
+      }
+
       setSubmitted(true);
+
+      if (settings.redirectUrl && settings.showThankYou) {
+        setTimeout(() => {
+          window.location.href = settings.redirectUrl;
+        }, 4000);
+      }
     } catch {
       setErrorMsg('Could not submit response. Backend server might be offline.');
     } finally {
@@ -271,16 +823,65 @@ function FormIntakeComponent() {
     );
   }
 
+  const isClosed = formConfig.settings.closeForm;
+  const maxReached = formConfig.settings.maxResponses > 0 && responseCount >= formConfig.settings.maxResponses;
+
+  if (isClosed || maxReached) {
+    return (
+      <main className="shell" style={{ maxWidth: '680px', padding: '100px 24px' }}>
+        <section className="canvas" style={{ textAlign: 'center', padding: '48px 24px', border: '1px solid var(--border)', borderRadius: 'var(--card-radius)' }}>
+          <div style={{ fontSize: '3rem', color: 'var(--accent)', marginBottom: '16px' }}>🔒</div>
+          <h2 style={{ fontSize: '1.8rem', margin: '0 0 12px', fontFamily: 'Orbitron, sans-serif' }}>Form Unavailable</h2>
+          <p style={{ color: 'var(--muted)', margin: 0 }}>
+            {isClosed ? 'This form has been closed by its owner to new responses.' : 'This form has reached its maximum response capacity.'}
+          </p>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="shell" style={{ maxWidth: '680px', padding: '60px 24px 100px' }}>
       {submitted ? (
         <section className="canvas" style={{ textAlign: 'center', padding: '48px 24px' }}>
-          <div style={{ fontSize: '3rem', color: 'var(--success)' }}>✓</div>
-          <h2 style={{ fontSize: '1.8rem', margin: '16px 0 8px', fontFamily: 'Orbitron, sans-serif' }}>Response Submitted!</h2>
-          <p style={{ color: 'var(--muted)', marginBottom: '32px' }}>Your responses were successfully logged to the NovaForms vault.</p>
-          <button type="button" className="submit-button" onClick={() => { setSubmitted(false); initAnswers(formConfig.questions); setCurrentPage(1); }}>
-            Submit Another Response
-          </button>
+          {formConfig.settings.successIllustration === 'confetti' && (
+            <div style={{ fontSize: '3.5rem', animation: 'bounce 1s infinite', marginBottom: '8px' }}>🎉✨🥳</div>
+          )}
+          {formConfig.settings.successIllustration === 'cyber-globe' && (
+            <div style={{ fontSize: '3.5rem', animation: 'spin 4s linear infinite', marginBottom: '8px' }}>🌐💫</div>
+          )}
+          {formConfig.settings.successIllustration === 'space-launch' && (
+            <div style={{ fontSize: '3.5rem', animation: 'bounce 1.5s infinite', marginBottom: '8px' }}>🚀✨</div>
+          )}
+          {!formConfig.settings.successIllustration && (
+            <div style={{ fontSize: '3rem', color: 'var(--success)' }}>✓</div>
+          )}
+
+          <h2 style={{ fontSize: '1.8rem', margin: '16px 0 8px', fontFamily: 'Orbitron, sans-serif' }}>
+            {formConfig.settings.thankYouTitle || 'Response Submitted!'}
+          </h2>
+          <p style={{ color: 'var(--muted)', marginBottom: '24px' }}>
+            {formConfig.settings.thankYouDescription || formConfig.settings.successMessage}
+          </p>
+
+          {formConfig.settings.showSubmissionId && newSubmissionId && (
+            <div style={{ padding: '8px 16px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)', borderRadius: '8px', display: 'inline-block', fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '32px', fontFamily: 'Share Tech Mono, monospace' }}>
+              Submission Reference ID: <span style={{ color: 'var(--accent)', fontWeight: 'bold' }}>#{newSubmissionId}</span>
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            {formConfig.settings.allowMultiple && (
+              <button type="button" className="submit-button" onClick={() => { setSubmitted(false); initAnswers(formConfig.questions); setCurrentPage(1); setNewSubmissionId(null); setIsEditing(false); setEditingSubmissionId(null); }}>
+                Submit Another Response
+              </button>
+            )}
+            {formConfig.settings.allowEdit && newSubmissionId && (
+              <button type="button" className="ghost-button" onClick={() => { setSubmitted(false); setIsEditing(true); setEditingSubmissionId(String(newSubmissionId)); }}>
+                Edit Your Response
+              </button>
+            )}
+          </div>
         </section>
       ) : (
         <form className="canvas" onSubmit={submit} style={{ gap: '24px' }}>
@@ -321,191 +922,533 @@ function FormIntakeComponent() {
               .filter((question) => (question.pageNumber || 1) === currentPage)
               .map((question) => {
                 const value = answers[question.id];
-              const getMultiplierCount = () => {
-                if (!question.multiplyEnabled || !question.multiplyTriggerId) return 1;
-                const triggerAnswer = answers[question.multiplyTriggerId];
-                return parseParticipantCount(triggerAnswer);
-              };
-              const count = getMultiplierCount();
-              return (
-                <div key={question.id} className="preview-card" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <label className="preview-label" style={{ display: 'block', fontSize: '1rem', fontWeight: 600 }}>
-                    {question.title} {question.required && <span style={{ color: 'var(--accent)' }}>*</span>}
-                  </label>
-                  {question.helpText && <span className="preview-help" style={{ display: 'block', fontSize: '0.8rem', color: 'var(--muted)' }}>{question.helpText}</span>}
+                const getMultiplierCount = () => {
+                  if (!question.multiplyEnabled || !question.multiplyTriggerId) return 1;
+                  const triggerAnswer = answers[question.multiplyTriggerId];
+                  return parseParticipantCount(triggerAnswer);
+                };
+                const count = getMultiplierCount();
 
-                  {question.type === 'short-answer' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      {Array.from({ length: count }).map((_, idx) => {
-                        const val = Array.isArray(value) ? value[idx] || '' : idx === 0 ? (value as string || '') : '';
+                const renderQuestionMedia = (q: Question) => {
+                  if (!q.mediaUrl) return null;
+                  const mediaStyle = {
+                    maxWidth: '100%',
+                    maxHeight: '260px',
+                    borderRadius: '8px',
+                    marginTop: '8px',
+                    marginBottom: '8px',
+                    border: '1px solid var(--border)',
+                    display: 'block'
+                  };
+                  switch (q.mediaType) {
+                    case 'image':
+                    case 'gif':
+                      return <img src={q.mediaUrl} alt={q.title} style={mediaStyle} />;
+                    case 'video':
+                      if (q.mediaUrl.includes('youtube.com') || q.mediaUrl.includes('youtu.be')) {
                         return (
-                          <input
-                            key={idx}
-                            type="text"
-                            placeholder={count > 1 ? `Participant ${idx + 1} answer` : ''}
-                            required={question.required && idx === 0}
-                            value={val}
-                            onChange={(e) => {
-                              if (count > 1) {
-                                const next = Array.isArray(value) ? [...value] : [typeof value === 'string' ? value : ''];
-                                while (next.length < count) next.push('');
-                                next[idx] = e.target.value;
-                                setAnswer(question.id, next);
-                              } else {
-                                setAnswer(question.id, e.target.value);
-                              }
-                            }}
-                          />
+                          <div className="video-embed-wrapper" style={{ marginTop: '8px', marginBottom: '8px', height: '220px' }}>
+                            <iframe
+                              src={getYouTubeEmbedUrl(q.mediaUrl)}
+                              title="Question video"
+                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                              allowFullScreen
+                              style={{ width: '100%', height: '100%', borderRadius: '8px', border: 'none' }}
+                            />
+                          </div>
                         );
-                      })}
-                    </div>
-                  )}
+                      }
+                      return <video src={q.mediaUrl} controls style={mediaStyle} />;
+                    case 'audio':
+                      return <audio src={q.mediaUrl} controls style={{ width: '100%', marginTop: '8px', marginBottom: '8px' }} />;
+                    case 'pdf':
+                      return (
+                        <div style={{ marginTop: '8px', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: '8px' }}>
+                          <span style={{ fontSize: '1.3rem' }}>📄</span>
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>PDF Document</span>
+                            <a href={q.mediaUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', fontSize: '0.75rem', textDecoration: 'underline' }}>
+                              View PDF / File
+                            </a>
+                          </div>
+                        </div>
+                      );
+                    default:
+                      return null;
+                  }
+                };
 
-                  {question.type === 'paragraph' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      {Array.from({ length: count }).map((_, idx) => {
-                        const val = Array.isArray(value) ? value[idx] || '' : idx === 0 ? (value as string || '') : '';
-                        return (
-                          <textarea
-                            key={idx}
-                            rows={4}
-                            placeholder={count > 1 ? `Participant ${idx + 1} details` : ''}
-                            required={question.required && idx === 0}
-                            value={val}
-                            onChange={(e) => {
-                              if (count > 1) {
-                                const next = Array.isArray(value) ? [...value] : [typeof value === 'string' ? value : ''];
-                                while (next.length < count) next.push('');
-                                next[idx] = e.target.value;
-                                setAnswer(question.id, next);
-                              } else {
-                                setAnswer(question.id, e.target.value);
-                              }
-                            }}
-                          />
-                        );
-                      })}
-                    </div>
-                  )}
+                return (
+                  <div key={question.id} className="preview-card" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {question.mediaPosition === 'above' && renderQuestionMedia(question)}
+                    <label className="preview-label" style={{ display: 'block', fontSize: '1rem', fontWeight: 600 }}>
+                      {question.title} {question.required && <span style={{ color: 'var(--accent)' }}>*</span>}
+                    </label>
+                    {question.helpText && <span className="preview-help" style={{ display: 'block', fontSize: '0.8rem', color: 'var(--muted)' }}>{question.helpText}</span>}
 
-                  {question.type === 'date' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      {Array.from({ length: count }).map((_, idx) => {
-                        const val = Array.isArray(value) ? value[idx] || '' : idx === 0 ? (value as string || '') : '';
-                        return (
-                          <input
-                            key={idx}
-                            type="date"
-                            required={question.required && idx === 0}
-                            value={val}
-                            onChange={(e) => {
-                              if (count > 1) {
-                                const next = Array.isArray(value) ? [...value] : [typeof value === 'string' ? value : ''];
-                                while (next.length < count) next.push('');
-                                next[idx] = e.target.value;
-                                setAnswer(question.id, next);
-                              } else {
-                                setAnswer(question.id, e.target.value);
-                              }
-                            }}
-                          />
-                        );
-                      })}
-                    </div>
-                  )}
+                    {/* Inputs Rendering */}
+                    {['short-answer', 'email', 'phone', 'number', 'url', 'time', 'datetime', 'date'].includes(question.type) && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {Array.from({ length: count }).map((_, idx) => {
+                          const val = Array.isArray(value) ? value[idx] || '' : idx === 0 ? (value as string || '') : '';
+                          const inputType = question.type === 'short-answer' ? 'text' 
+                            : question.type === 'datetime' ? 'datetime-local' 
+                            : question.type === 'phone' ? 'tel'
+                            : question.type;
 
-                  {question.type === 'dropdown' && (
-                    <select
-                      required={question.required}
-                      value={typeof value === 'string' ? value : ''}
-                      onChange={(e) => setAnswer(question.id, e.target.value)}
-                    >
-                      <option value="">Choose an option</option>
-                      {question.options.map((opt) => (
-                        <option key={opt} value={opt}>{opt}</option>
-                      ))}
-                    </select>
-                  )}
+                          const inputEl = (
+                            <input
+                              key={idx}
+                              type={inputType}
+                              placeholder={question.placeholder || (count > 1 ? `Participant ${idx + 1} answer` : '')}
+                              required={question.required && idx === 0}
+                              value={val}
+                              onChange={(e) => {
+                                if (count > 1) {
+                                  const next = Array.isArray(value) ? [...value] : [typeof value === 'string' ? value : ''];
+                                  while (next.length < count) next.push('');
+                                  next[idx] = e.target.value;
+                                  setAnswer(question.id, next);
+                                } else {
+                                  setAnswer(question.id, e.target.value);
+                                }
+                              }}
+                            />
+                          );
 
-                  {question.type === 'multiple-choice' && (
-                    <div className="choice-stack" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      {question.options.map((opt) => (
-                        <label key={opt} className="choice-item" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                          <input
-                            type="radio"
-                            name={question.id}
-                            required={question.required && !value}
-                            value={opt}
-                            checked={typeof value === 'string' && value === opt}
-                            onChange={(e) => setAnswer(question.id, e.target.value)}
-                          />
-                          <span>{opt}</span>
-                        </label>
-                      ))}
-                    </div>
-                  )}
+                          return (question.prefix || question.suffix) ? (
+                            <div key={idx} style={{ display: 'flex', alignItems: 'stretch', gap: '0', borderRadius: 'var(--card-radius)', overflow: 'hidden', border: '1px solid var(--border)', background: 'rgba(255,255,255,0.01)' }}>
+                              {question.prefix && <span style={{ display: 'flex', alignItems: 'center', padding: '0 12px', background: 'rgba(255,255,255,0.05)', borderRight: '1px solid var(--border)', fontSize: '0.85rem', color: 'var(--muted)' }}>{question.prefix}</span>}
+                              <div style={{ flex: 1 }}>
+                                <input
+                                  type={inputType}
+                                  placeholder={question.placeholder || ''}
+                                  required={question.required && idx === 0}
+                                  value={val}
+                                  onChange={(e) => {
+                                    if (count > 1) {
+                                      const next = Array.isArray(value) ? [...value] : [typeof value === 'string' ? value : ''];
+                                      while (next.length < count) next.push('');
+                                      next[idx] = e.target.value;
+                                      setAnswer(question.id, next);
+                                    } else {
+                                      setAnswer(question.id, e.target.value);
+                                    }
+                                  }}
+                                  style={{ border: 'none', borderRadius: 0, width: '100%', background: 'transparent' }}
+                                />
+                              </div>
+                              {question.suffix && <span style={{ display: 'flex', alignItems: 'center', padding: '0 12px', background: 'rgba(255,255,255,0.05)', borderLeft: '1px solid var(--border)', fontSize: '0.85rem', color: 'var(--muted)' }}>{question.suffix}</span>}
+                            </div>
+                          ) : inputEl;
+                        })}
+                      </div>
+                    )}
 
-                  {question.type === 'checkboxes' && (
-                    <div className="choice-stack" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      {question.options.map((opt) => {
-                        const selected = Array.isArray(value) ? value : [];
-                        return (
+                    {question.type === 'paragraph' && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {Array.from({ length: count }).map((_, idx) => {
+                          const val = Array.isArray(value) ? value[idx] || '' : idx === 0 ? (value as string || '') : '';
+                          return (
+                            <textarea
+                              key={idx}
+                              rows={4}
+                              placeholder={question.placeholder || (count > 1 ? `Participant ${idx + 1} details` : '')}
+                              required={question.required && idx === 0}
+                              value={val}
+                              onChange={(e) => {
+                                if (count > 1) {
+                                  const next = Array.isArray(value) ? [...value] : [typeof value === 'string' ? value : ''];
+                                  while (next.length < count) next.push('');
+                                  next[idx] = e.target.value;
+                                  setAnswer(question.id, next);
+                                } else {
+                                  setAnswer(question.id, e.target.value);
+                                }
+                              }}
+                            />
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {question.type === 'dropdown' && (
+                      <select
+                        required={question.required}
+                        value={typeof value === 'string' ? value : ''}
+                        onChange={(e) => setAnswer(question.id, e.target.value)}
+                      >
+                        <option value="">Choose an option</option>
+                        {question.options.map((opt) => (
+                          <option key={opt} value={opt}>{opt}</option>
+                        ))}
+                      </select>
+                    )}
+
+                    {question.type === 'multiple-choice' && (
+                      <div className="choice-stack" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {question.options.map((opt) => (
                           <label key={opt} className="choice-item" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
                             <input
-                              type="checkbox"
-                              checked={selected.includes(opt)}
-                              onChange={(e) => {
-                                const next = e.target.checked
-                                  ? [...selected, opt]
-                                  : selected.filter((item) => item !== opt);
-                                setAnswer(question.id, next);
-                              }}
+                              type="radio"
+                              name={question.id}
+                              required={question.required && !value}
+                              value={opt}
+                              checked={typeof value === 'string' && value === opt}
+                              onChange={(e) => setAnswer(question.id, e.target.value)}
                             />
                             <span>{opt}</span>
                           </label>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {question.type === 'scale' && (
-                    <div className="scale-wrap" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <input
-                        type="range"
-                        min="1"
-                        max={String(question.scaleMax)}
-                        value={typeof value === 'string' ? value : '5'}
-                        onChange={(e) => setAnswer(question.id, e.target.value)}
-                      />
-                      <div className="scale-labels" style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: 'var(--muted)' }}>
-                        <span>1</span>
-                        <span>{typeof value === 'string' ? value : '5'}</span>
-                        <span>{question.scaleMax}</span>
+                        ))}
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  {question.type === 'star-rating' && (
-                    <div className="star-row" style={{ display: 'flex', gap: '8px' }}>
-                      {[1, 2, 3, 4, 5].map((star) => {
-                        const ratingVal = Number(value || '5');
-                        return (
-                          <button
-                            key={star}
-                            type="button"
-                            className={star <= ratingVal ? 'star-btn active' : 'star-btn'}
-                            onClick={() => setAnswer(question.id, String(star))}
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.8rem' }}
-                          >
-                            ★
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                    {question.type === 'checkboxes' && (
+                      <div className="choice-stack" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {question.options.map((opt) => {
+                          const selected = Array.isArray(value) ? value : [];
+                          return (
+                            <label key={opt} className="choice-item" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                              <input
+                                type="checkbox"
+                                checked={selected.includes(opt)}
+                                onChange={(e) => {
+                                  const next = e.target.checked
+                                    ? [...selected, opt]
+                                    : selected.filter((item) => item !== opt);
+                                  setAnswer(question.id, next);
+                                }}
+                              />
+                              <span>{opt}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {question.type === 'star-rating' && (
+                      <div className="star-row" style={{ display: 'flex', gap: '8px' }}>
+                        {[1, 2, 3, 4, 5].map((star) => {
+                          const ratingVal = Number(value || '5');
+                          return (
+                            <button
+                              key={star}
+                              type="button"
+                              className={star <= ratingVal ? 'star-btn active' : 'star-btn'}
+                              onClick={() => setAnswer(question.id, String(star))}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.8rem' }}
+                            >
+                              ★
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {question.type === 'scale' && (
+                      <div className="scale-wrap" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: '4px' }}>
+                          {Array.from({ length: (question.scaleMax || 10) - (question.scaleMin || 1) + 1 }).map((_, idx) => {
+                            const num = (question.scaleMin || 1) + idx;
+                            const isActive = Number(value || (question.scaleMin || 1)) === num;
+                            return (
+                              <button
+                                key={num}
+                                type="button"
+                                onClick={() => setAnswer(question.id, String(num))}
+                                style={{
+                                  width: '38px',
+                                  height: '38px',
+                                  borderRadius: '50%',
+                                  border: isActive ? '2px solid var(--accent)' : '1px solid var(--border)',
+                                  background: isActive ? 'var(--accent-glow)' : 'rgba(255,255,255,0.02)',
+                                  color: isActive ? 'var(--accent)' : 'var(--text)',
+                                  fontWeight: 'bold',
+                                  cursor: 'pointer',
+                                  fontSize: '0.85rem'
+                                }}
+                              >
+                                {num}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: 'var(--muted)' }}>
+                          <span>{question.scaleLeftLabel || String(question.scaleMin || 1)}</span>
+                          <span>{question.scaleRightLabel || String(question.scaleMax || 10)}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {question.type === 'slider' && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <input
+                          type="range"
+                          min={question.sliderMin !== undefined ? question.sliderMin : 0}
+                          max={question.sliderMax !== undefined ? question.sliderMax : 100}
+                          step={question.sliderStep !== undefined ? question.sliderStep : 1}
+                          value={value !== undefined ? String(value) : String(question.sliderMin || 0)}
+                          onChange={(e) => setAnswer(question.id, e.target.value)}
+                          style={{ width: '100%', accentColor: 'var(--accent)' }}
+                        />
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: 'var(--muted)' }}>
+                          <span>{question.sliderMin !== undefined ? question.sliderMin : 0}</span>
+                          <span style={{ color: 'var(--accent)', fontWeight: 'bold' }}>{value !== undefined ? String(value) : String(question.sliderMin || 0)}</span>
+                          <span>{question.sliderMax !== undefined ? question.sliderMax : 100}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {question.type === 'emoji-rating' && (
+                      <div style={{ display: 'flex', gap: '12px', fontSize: '1.8rem' }}>
+                        {(question.emojiType === 'hearts' ? ['❤️', '❤️', '❤️', '❤️', '❤️'] : question.emojiType === 'emojis' ? ['😠', '🙁', '😐', '🙂', '😄'] : ['★', '★', '★', '★', '★']).map((icon, idx) => {
+                          const ratingVal = Number(value || '3');
+                          return (
+                            <button
+                              key={idx}
+                              type="button"
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                cursor: 'pointer',
+                                opacity: idx < ratingVal ? 1 : 0.25,
+                                transform: idx < ratingVal ? 'scale(1.15)' : 'scale(1)',
+                                transition: 'all 0.2s ease',
+                                padding: 0
+                              }}
+                              onClick={() => setAnswer(question.id, String(idx + 1))}
+                            >
+                              {icon}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {question.type === 'nps' && (
+                      <div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                          {Array.from({ length: 11 }).map((_, idx) => {
+                            const npsCurrent = value !== undefined ? Number(value) : -1;
+                            return (
+                              <button
+                                key={idx}
+                                type="button"
+                                style={{
+                                  width: '36px',
+                                  height: '36px',
+                                  padding: 0,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  borderRadius: '8px',
+                                  border: npsCurrent === idx ? '2px solid var(--accent)' : '1px solid var(--border)',
+                                  background: npsCurrent === idx ? 'var(--accent-glow)' : 'rgba(255,255,255,0.02)',
+                                  color: npsCurrent === idx ? 'var(--accent)' : 'var(--text)',
+                                  fontWeight: 'bold',
+                                  cursor: 'pointer',
+                                  fontSize: '0.85rem'
+                                }}
+                                onClick={() => setAnswer(question.id, String(idx))}
+                              >
+                                {idx}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--muted)', marginTop: '8px' }}>
+                          <span>Not likely at all</span>
+                          <span>Extremely likely</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {question.type === 'ranking' && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {(() => {
+                          let list: string[] = [];
+                          try {
+                            list = typeof value === 'string' ? JSON.parse(value) : Array.isArray(value) ? value : [];
+                          } catch {}
+                          if (list.length === 0) {
+                            list = question.rankingItems || [];
+                          }
+                          return list.map((item, idx) => (
+                            <div
+                              key={idx}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                padding: '10px 14px',
+                                background: 'rgba(255,255,255,0.02)',
+                                border: '1px solid var(--border)',
+                                borderRadius: '8px',
+                                fontSize: '0.88rem'
+                              }}
+                            >
+                              <span>{item}</span>
+                              <div style={{ display: 'flex', gap: '4px' }}>
+                                <button
+                                  type="button"
+                                  className="ghost-button"
+                                  style={{ padding: '2px 8px', fontSize: '0.75rem' }}
+                                  disabled={idx === 0}
+                                  onClick={() => {
+                                    const next = [...list];
+                                    const temp = next[idx];
+                                    next[idx] = next[idx - 1];
+                                    next[idx - 1] = temp;
+                                    setAnswer(question.id, JSON.stringify(next));
+                                  }}
+                                >
+                                  ▲
+                                </button>
+                                <button
+                                  type="button"
+                                  className="ghost-button"
+                                  style={{ padding: '2px 8px', fontSize: '0.75rem' }}
+                                  disabled={idx === list.length - 1}
+                                  onClick={() => {
+                                    const next = [...list];
+                                    const temp = next[idx];
+                                    next[idx] = next[idx + 1];
+                                    next[idx + 1] = temp;
+                                    setAnswer(question.id, JSON.stringify(next));
+                                  }}
+                                >
+                                  ▼
+                                </button>
+                              </div>
+                            </div>
+                          ));
+                        })()}
+                      </div>
+                    )}
+
+                    {(question.type === 'matrix' || question.type === 'checkbox-matrix') && (
+                      <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '380px' }}>
+                          <thead>
+                            <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                              <th style={{ padding: '8px', textAlign: 'left', fontSize: '0.75rem', color: 'var(--muted)' }}>Statement</th>
+                              {(question.matrixCols || []).map(c => (
+                                <th key={c} style={{ padding: '8px', textAlign: 'center', fontSize: '0.75rem', color: 'var(--muted)' }}>{c}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(() => {
+                              let mGrid: Record<string, string[]> = {};
+                              try {
+                                mGrid = typeof value === 'string' ? JSON.parse(value) : {};
+                              } catch {}
+                              return (question.matrixRows || []).map(r => {
+                                const selections = mGrid[r] || [];
+                                return (
+                                  <tr key={r} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                                    <td style={{ padding: '8px', fontSize: '0.85rem', fontWeight: 'bold' }}>{r}</td>
+                                    {(question.matrixCols || []).map(c => {
+                                      const isSel = selections.includes(c);
+                                      return (
+                                        <td key={c} style={{ padding: '8px', textAlign: 'center' }}>
+                                          <input
+                                            type={question.type === 'matrix' ? 'radio' : 'checkbox'}
+                                            name={`${question.id}-${r}`}
+                                            checked={isSel}
+                                            onChange={(e) => {
+                                              const next = { ...mGrid };
+                                              if (question.type === 'matrix') {
+                                                next[r] = e.target.checked ? [c] : [];
+                                              } else {
+                                                const currentSelections = next[r] || [];
+                                                next[r] = e.target.checked 
+                                                  ? [...currentSelections, c]
+                                                  : currentSelections.filter(colItem => colItem !== c);
+                                              }
+                                              setAnswer(question.id, JSON.stringify(next));
+                                            }}
+                                            style={{ cursor: 'pointer' }}
+                                          />
+                                        </td>
+                                      );
+                                    })}
+                                  </tr>
+                                );
+                              });
+                            })()}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    {question.type === 'address' && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {(() => {
+                          let addressData: Record<string, string> = { street: '', city: '', state: '', zip: '' };
+                          try {
+                            addressData = typeof value === 'string' ? JSON.parse(value) : {};
+                          } catch {}
+                          const changeAddress = (fieldKey: string, val: string) => {
+                            const next = { ...addressData, [fieldKey]: val };
+                            setAnswer(question.id, JSON.stringify(next));
+                          };
+                          return (
+                            <>
+                              <input
+                                type="text"
+                                placeholder="Street Address"
+                                value={addressData.street || ''}
+                                onChange={(e) => changeAddress('street', e.target.value)}
+                              />
+                              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '8px' }}>
+                                <input
+                                  type="text"
+                                  placeholder="City"
+                                  value={addressData.city || ''}
+                                  onChange={(e) => changeAddress('city', e.target.value)}
+                                />
+                                <input
+                                  type="text"
+                                  placeholder="State"
+                                  value={addressData.state || ''}
+                                  onChange={(e) => changeAddress('state', e.target.value)}
+                                />
+                                <input
+                                  type="text"
+                                  placeholder="ZIP"
+                                  value={addressData.zip || ''}
+                                  onChange={(e) => changeAddress('zip', e.target.value)}
+                                />
+                              </div>
+                            </>
+                          );
+                        })()}
+                      </div>
+                    )}
+
+                    {question.type === 'signature' && (
+                      <SignaturePad 
+                        value={typeof value === 'string' ? value : ''} 
+                        onChange={(val) => setAnswer(question.id, val)} 
+                      />
+                    )}
+
+                    {question.type === 'file' && (
+                      <FileUpload
+                        maxFileSize={question.maxFileSize}
+                        allowedFileTypes={question.allowedFileTypes}
+                        multipleFiles={question.multipleFiles}
+                        maxFiles={question.maxFiles}
+                        value={value || ''}
+                        onChange={(val) => setAnswer(question.id, val)}
+                      />
+                    )}
+
+                    {question.mediaPosition === 'below' && renderQuestionMedia(question)}
+                  </div>
+                );
+              })}
           </div>
 
           {formConfig.totalPages && formConfig.totalPages > 1 && (

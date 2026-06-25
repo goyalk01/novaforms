@@ -35,6 +35,7 @@ public class FormConfigController {
       defaultConf.setTitle("Orbit Intake");
       defaultConf.setDescription("Dark enterprise form builder with live preview.");
       defaultConf.setQuestionsJson("[]");
+      defaultConf.setSettingsJson("{}");
       defaultConf.setThemeMode("silver");
       defaultConf.setLayoutDensity("comfortable");
       defaultConf.setSubmissionMode("standard");
@@ -81,6 +82,7 @@ public class FormConfigController {
     config.setTitle(request.getTitle());
     config.setDescription(request.getDescription());
     config.setQuestionsJson("[]");
+    config.setSettingsJson("{}");
     config.setThemeMode("silver");
     config.setLayoutDensity("comfortable");
     config.setSubmissionMode("standard");
@@ -123,6 +125,7 @@ public class FormConfigController {
     config.setBannerUrl(request.getBannerUrl());
     config.setVideoUrl(request.getVideoUrl());
     config.setQuestionsJson(request.getQuestionsJson());
+    config.setSettingsJson(request.getSettingsJson());
     config.setThemeMode(request.getThemeMode());
     config.setLayoutDensity(request.getLayoutDensity());
     config.setSubmissionMode(request.getSubmissionMode());
@@ -306,6 +309,7 @@ public class FormConfigController {
     private String bannerUrl;
     private String videoUrl;
     private String questionsJson;
+    private String settingsJson;
     private String themeMode;
     private String layoutDensity;
     private String submissionMode;
@@ -323,6 +327,8 @@ public class FormConfigController {
     public void setVideoUrl(String videoUrl) { this.videoUrl = videoUrl; }
     public String getQuestionsJson() { return questionsJson; }
     public void setQuestionsJson(String questionsJson) { this.questionsJson = questionsJson; }
+    public String getSettingsJson() { return settingsJson; }
+    public void setSettingsJson(String settingsJson) { this.settingsJson = settingsJson; }
     public String getThemeMode() { return themeMode; }
     public void setThemeMode(String themeMode) { this.themeMode = themeMode; }
     public String getLayoutDensity() { return layoutDensity; }

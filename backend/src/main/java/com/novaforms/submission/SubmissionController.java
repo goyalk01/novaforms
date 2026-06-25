@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -58,5 +59,30 @@ public class SubmissionController {
   @DeleteMapping("/{id}")
   public void delete(@PathVariable Long id) {
     repository.deleteById(id);
+  }
+
+  @GetMapping("/{id}")
+  public SubmissionResponse getById(@PathVariable Long id) {
+    return repository.findById(id)
+        .map(SubmissionResponse::fromEntity)
+        .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(
+            org.springframework.http.HttpStatus.NOT_FOUND, "Submission not found"));
+  }
+
+  @PutMapping("/{id}")
+  public SubmissionResponse update(@PathVariable Long id, @Valid @RequestBody SubmissionRequest request) {
+    Submission submission = repository.findById(id)
+        .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(
+            org.springframework.http.HttpStatus.NOT_FOUND, "Submission not found"));
+
+    submission.setFullName(request.fullName());
+    submission.setEmail(request.email());
+    submission.setCompany(request.company());
+    submission.setRating(request.rating());
+    submission.setInterests(request.interests());
+    submission.setAnswersJson(request.answersJson());
+    submission.setMessage(request.message());
+
+    return SubmissionResponse.fromEntity(repository.save(submission));
   }
 }

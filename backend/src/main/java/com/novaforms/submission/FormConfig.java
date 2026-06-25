@@ -26,6 +26,9 @@ public class FormConfig {
   @Column(columnDefinition = "TEXT")
   private String questionsJson;
 
+  @Column(columnDefinition = "TEXT")
+  private String settingsJson;
+
   private String themeMode;
   private String layoutDensity;
   private String submissionMode;
@@ -119,5 +122,13 @@ public class FormConfig {
 
   public void setTotalPages(Integer totalPages) {
     this.totalPages = totalPages;
+  }
+
+  public String getSettingsJson() {
+    return settingsJson;
+  }
+
+  public void setSettingsJson(String settingsJson) {
+    this.settingsJson = settingsJson;
   }
 }
