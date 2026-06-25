@@ -682,6 +682,9 @@ function BuilderComponent() {
     setUploading(true);
     const formData = new FormData();
     formData.append('file', file);
+    if (formId) {
+      formData.append('formId', formId);
+    }
 
     try {
       const res = await fetch(`${API_BASE}/api/storage/upload`, {
@@ -2158,21 +2161,6 @@ function BuilderComponent() {
         body: JSON.stringify(configPayload)
       });
 
-      // Local storage backup
-      const formConfig = {
-        title: builder.formTitle,
-        description: builder.formDescription,
-        workspaceName: builder.workspaceName,
-        theme: builder.themeMode,
-        density: builder.densityMode,
-        submissionMode: builder.submissionMode,
-        totalPages: builder.totalPages,
-        bannerUrl: builder.bannerUrl,
-        videoUrl: builder.videoUrl,
-        questions: questions,
-        settings: builder.settings
-      };
-      localStorage.setItem('novaforms-published-form', JSON.stringify(formConfig));
 
       const saved = (await response.json()) as Submission;
       setSubmissions((current) => [saved, ...current].slice(0, 8));

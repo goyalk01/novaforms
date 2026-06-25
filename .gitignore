@@ -19,16 +19,6 @@ backend/.env
 *.sln
 *.sw?
 
-# AI Agent Instruction files
-AGENT.md
-agent.md
-CLAUDE.md
-.gemini/
-.claude/
-.cursor/
-.copilot/
-.antigravity/
-
 # Temporary / OS files
 .DS_Store
 Thumbs.db

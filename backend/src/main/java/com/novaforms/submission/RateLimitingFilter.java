@@ -2,6 +2,7 @@ package com.novaforms.submission;
 
 import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.Bucket;
+import io.github.bucket4j.ConsumptionProbe;
 import io.github.bucket4j.Refill;
 import jakarta.servlet.*;
 import jakarta.servlet.http.HttpServletRequest;
@@ -15,7 +16,7 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 @Component
-@Order(Ordered.HIGHEST_PRECEDENCE)
+@Order(Ordered.HIGHEST_PRECEDENCE + 1) // Run right after RequestIdFilter
 public class RateLimitingFilter implements Filter {
 
     private final Map<String, Bucket> cache = new ConcurrentHashMap<>();
@@ -45,7 +46,8 @@ public class RateLimitingFilter implements Filter {
             String ip = getClientIP(httpRequest);
             Bucket bucket = cache.computeIfAbsent(ip, k -> createNewBucket());
 
-            if (!bucket.tryConsume(1)) {
+            ConsumptionProbe probe = bucket.tryConsumeAndReturnRemaining(1);
+            if (!probe.isConsumed()) {
                 String origin = httpRequest.getHeader("Origin");
                 if (origin != null) {
                     httpResponse.setHeader("Access-Control-Allow-Origin", origin);
@@ -53,10 +55,14 @@ public class RateLimitingFilter implements Filter {
                     httpResponse.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
                     httpResponse.setHeader("Access-Control-Allow-Headers", "*");
                 }
+                httpResponse.setHeader("X-Rate-Limit-Retry-After-Seconds", String.valueOf(probe.getNanosToWaitForRefill() / 1_000_000_000L));
                 httpResponse.setStatus(429);
                 httpResponse.setContentType("application/json");
                 httpResponse.getWriter().write("{\"error\": \"Too many requests. Please try again later.\"}");
                 return;
+            } else {
+                httpResponse.setHeader("X-Rate-Limit-Limit", "30");
+                httpResponse.setHeader("X-Rate-Limit-Remaining", String.valueOf(probe.getRemainingTokens()));
             }
         }
 

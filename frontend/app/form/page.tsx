@@ -256,7 +256,9 @@ function FileUpload({
   multipleFiles, 
   maxFiles, 
   value, 
-  onChange 
+  onChange,
+  formId,
+  questionId
 }: { 
   maxFileSize?: number;
   allowedFileTypes?: string[];
@@ -264,6 +266,8 @@ function FileUpload({
   maxFiles?: number;
   value: AnswerValue;
   onChange: (val: AnswerValue) => void;
+  formId: string;
+  questionId: string;
 }) {
   const [uploading, setUploading] = useState(false);
   const filesList: string[] = typeof value === 'string' ? (value ? [value] : []) : Array.isArray(value) ? value : [];
@@ -302,6 +306,8 @@ function FileUpload({
 
     const formData = new FormData();
     formData.append('file', file);
+    if (formId) formData.append('formId', formId);
+    if (questionId) formData.append('questionId', questionId);
 
     setUploading(true);
     try {
@@ -453,21 +459,6 @@ function FormIntakeComponent() {
         console.error("Failed to fetch form config from API", err);
       }
 
-      if (!loadedConfig) {
-        // Try local storage
-        const saved = localStorage.getItem('novaforms-published-form');
-        if (saved) {
-          try {
-            const parsed = JSON.parse(saved);
-            loadedConfig = {
-              ...parsed,
-              settings: parsed.settings || defaultSettings
-            };
-          } catch (e) {
-            console.error("Failed to parse local storage configuration", e);
-          }
-        }
-      }
 
       if (!loadedConfig) {
         // Fallback defaults
@@ -1442,6 +1433,8 @@ function FormIntakeComponent() {
                         maxFiles={question.maxFiles}
                         value={value || ''}
                         onChange={(val) => setAnswer(question.id, val)}
+                        formId={formId}
+                        questionId={question.id}
                       />
                     )}
 
