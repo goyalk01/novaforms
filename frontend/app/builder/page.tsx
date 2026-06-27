@@ -408,25 +408,25 @@ const defaultSettings: SubmissionSettings = {
 
   closedTitle: 'Form Closed',
   closedDescription: 'This form has been closed by its owner to new responses.',
-  closedIllustration: '≡ƒöÆ',
+  closedIllustration: '🔒',
   closedButtonLabel: '',
   closedRedirectUrl: '',
 
   pausedTitle: 'Form Paused',
   pausedDescription: 'This form is temporarily paused. Check back later.',
-  pausedIllustration: 'ΓÅ╕',
+  pausedIllustration: '⏸',
   pausedButtonLabel: '',
   pausedRedirectUrl: '',
 
   scheduledTitle: 'Not Open Yet',
   scheduledDescription: 'This form is not accepting responses yet.',
-  scheduledIllustration: 'ΓÅ│',
+  scheduledIllustration: '⏳',
   scheduledButtonLabel: '',
   scheduledRedirectUrl: '',
 
   limitTitle: 'Capacity Reached',
   limitDescription: 'This form has reached its maximum response capacity.',
-  limitIllustration: '≡ƒÜ½',
+  limitIllustration: '🚫',
   limitButtonLabel: '',
   limitRedirectUrl: ''
 };
@@ -660,7 +660,8 @@ function BuilderComponent() {
     try {
       const res = await fetch(`${API_BASE}/api/form-config/${formId}?email=${encodeURIComponent(currentUser)}`);
       if (res.ok) {
-        const data = await res.json();
+        const resJson = await res.json();
+        const data = resJson.data !== undefined ? resJson.data : resJson;
         const conf = data.config;
         if (conf) {
           let parsedSettings = defaultSettings;
@@ -715,13 +716,18 @@ function BuilderComponent() {
           if (conf.themeJson) {
             try {
               const themeObj = JSON.parse(conf.themeJson);
-              if (themeObj.accentColor) setAccentColor(themeObj.accentColor);
-              if (themeObj.borderRadius) setBorderRadius(themeObj.borderRadius);
-              if (themeObj.gridOpacity !== undefined) setGridOpacity(themeObj.gridOpacity);
-              if (themeObj.enableBlur !== undefined) setEnableBlur(themeObj.enableBlur);
+              setAccentColor(themeObj.accentColor || 'default');
+              setBorderRadius(themeObj.borderRadius || '16px');
+              setGridOpacity(themeObj.gridOpacity !== undefined ? themeObj.gridOpacity : 0.03);
+              setEnableBlur(themeObj.enableBlur !== undefined ? themeObj.enableBlur : false);
             } catch (e) {
               console.error("Failed to parse themeJson", e);
             }
+          } else {
+            setAccentColor('default');
+            setBorderRadius('16px');
+            setGridOpacity(0.03);
+            setEnableBlur(false);
           }
         }
         setCollaborators(data.collaborators || []);
@@ -1126,7 +1132,7 @@ function BuilderComponent() {
               onClick={() => moveQuestion(index, 'down')}
               title="Move Down"
             >
-              Γû╝
+              ▼
             </button>
             <button type="button" className="ghost-button" onClick={() => duplicateQuestion(question.id)}>
               Duplicate
@@ -2114,7 +2120,7 @@ function BuilderComponent() {
                         setAnswer(question.id, JSON.stringify(next));
                       }}
                     >
-                      Γû╝
+                      ▼
                     </button>
                   </div>
                 </div>
@@ -2734,8 +2740,8 @@ function BuilderComponent() {
                     textAlign: 'left'
                   }}
                 >
-                  <span>≡ƒôü Lifecycle</span>
-                  <span>{expandedSection === 'lifecycle' ? 'Γû╝' : 'Γû╢'}</span>
+                  <span>📁 Lifecycle</span>
+                  <span>{expandedSection === 'lifecycle' ? '▼' : '▶'}</span>
                 </button>
                 {expandedSection === 'lifecycle' && (
                   <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px', borderTop: '1px solid var(--border)' }}>
@@ -2762,10 +2768,10 @@ function BuilderComponent() {
                           builder.status === 'CLOSED' ? '1px solid #ef4444' :
                           builder.status === 'ARCHIVED' ? '1px solid #9ca3af' : '1px solid #eab308'
                       }}>
-                        {builder.status === 'OPEN' ? '≡ƒƒó Open' :
-                         builder.status === 'PAUSED' ? 'ΓÅ╕ Paused' :
-                         builder.status === 'CLOSED' ? '≡ƒö┤ Closed' :
-                         builder.status === 'ARCHIVED' ? '≡ƒôª Archived' : '≡ƒƒí Draft'}
+                        {builder.status === 'OPEN' ? '🟢 Open' :
+                         builder.status === 'PAUSED' ? '⏸ Paused' :
+                         builder.status === 'CLOSED' ? '🔴 Closed' :
+                         builder.status === 'ARCHIVED' ? '📦 Archived' : '🟡 Draft'}
                       </span>
                     </div>
                     
@@ -2787,7 +2793,7 @@ function BuilderComponent() {
                             }
                           }}
                         >
-                          ≡ƒÜÇ Publish Form
+                          🚀 Publish Form
                         </button>
                       )}
                       {builder.published && (
@@ -2808,7 +2814,7 @@ function BuilderComponent() {
                                 }
                               }}
                             >
-                              ΓÅ╕ Pause Form
+                              ⏸ Pause Form
                             </button>
                           )}
                           {builder.status === 'PAUSED' && (
@@ -2827,7 +2833,7 @@ function BuilderComponent() {
                                 }
                               }}
                             >
-                              Γû╢ Resume Form
+                              ▶ Resume Form
                             </button>
                           )}
                           <button
@@ -2847,7 +2853,7 @@ function BuilderComponent() {
                               }
                             }}
                           >
-                            Γå⌐ Unpublish Form
+                            ↩ Unpublish Form
                           </button>
                         </>
                       )}
@@ -2869,7 +2875,7 @@ function BuilderComponent() {
                             }
                           }}
                         >
-                          ≡ƒôª Archive Form
+                          📦 Archive Form
                         </button>
                       )}
                       {builder.status === 'ARCHIVED' && (
@@ -2888,7 +2894,7 @@ function BuilderComponent() {
                             }
                           }}
                         >
-                          ΓÖ╗ Restore Draft
+                          ♻ Restore Draft
                         </button>
                       )}
                     </div>
@@ -2916,8 +2922,8 @@ function BuilderComponent() {
                     textAlign: 'left'
                   }}
                 >
-                  <span>≡ƒôà Availability</span>
-                  <span>{expandedSection === 'availability' ? 'Γû╝' : 'Γû╢'}</span>
+                  <span>📅 Availability</span>
+                  <span>{expandedSection === 'availability' ? '▼' : '▶'}</span>
                 </button>
                 {expandedSection === 'availability' && (
                   <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px', borderTop: '1px solid var(--border)' }}>
@@ -2988,7 +2994,7 @@ function BuilderComponent() {
                         />
                         <input
                           type="text"
-                          placeholder="Paused Illustration (e.g. ΓÅ╕)"
+                          placeholder="Paused Illustration (e.g. ⏸)"
                           value={builder.settings.pausedIllustration || ''}
                           onChange={(e) => updateSettings('pausedIllustration', e.target.value)}
                           style={{ fontSize: '0.75rem', padding: '4px' }}
@@ -3015,7 +3021,7 @@ function BuilderComponent() {
                         />
                         <input
                           type="text"
-                          placeholder="Closed Illustration (e.g. ≡ƒöÆ)"
+                          placeholder="Closed Illustration (e.g. 🔒)"
                           value={builder.settings.closedIllustration || ''}
                           onChange={(e) => updateSettings('closedIllustration', e.target.value)}
                           style={{ fontSize: '0.75rem', padding: '4px' }}
@@ -3042,7 +3048,7 @@ function BuilderComponent() {
                         />
                         <input
                           type="text"
-                          placeholder="Scheduled Illustration (e.g. ΓÅ│)"
+                          placeholder="Scheduled Illustration (e.g. ⏳)"
                           value={builder.settings.scheduledIllustration || ''}
                           onChange={(e) => updateSettings('scheduledIllustration', e.target.value)}
                           style={{ fontSize: '0.75rem', padding: '4px' }}
@@ -3073,8 +3079,8 @@ function BuilderComponent() {
                     textAlign: 'left'
                   }}
                 >
-                  <span>≡ƒôè Responses</span>
-                  <span>{expandedSection === 'responses' ? 'Γû╝' : 'Γû╢'}</span>
+                  <span>📊 Responses</span>
+                  <span>{expandedSection === 'responses' ? '▼' : '▶'}</span>
                 </button>
                 {expandedSection === 'responses' && (
                   <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px', borderTop: '1px solid var(--border)' }}>
@@ -3159,8 +3165,8 @@ function BuilderComponent() {
                     textAlign: 'left'
                   }}
                 >
-                  <span>Γ£ô Completion</span>
-                  <span>{expandedSection === 'completion' ? 'Γû╝' : 'Γû╢'}</span>
+                  <span>✓ Completion</span>
+                  <span>{expandedSection === 'completion' ? '▼' : '▶'}</span>
                 </button>
                 {expandedSection === 'completion' && (
                   <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px', borderTop: '1px solid var(--border)' }}>
@@ -3202,9 +3208,9 @@ function BuilderComponent() {
                             style={{ fontSize: '0.8rem', padding: '6px' }}
                           >
                             <option value="">None</option>
-                            <option value="confetti">Confetti ≡ƒÄë</option>
-                            <option value="cyber-globe">Cyber Globe ≡ƒîÉ</option>
-                            <option value="space-launch">Space Launch ≡ƒÜÇ</option>
+                            <option value="confetti">Confetti 🎉</option>
+                            <option value="cyber-globe">Cyber Globe 🌐</option>
+                            <option value="space-launch">Space Launch 🚀</option>
                           </select>
                         </label>
                         <label style={{ display: 'flex', alignContent: 'center', justifyContent: 'space-between', flexDirection: 'row', cursor: 'pointer' }}>
@@ -3253,8 +3259,8 @@ function BuilderComponent() {
                     textAlign: 'left'
                   }}
                 >
-                  <span>≡ƒ¢í Access Control</span>
-                  <span>{expandedSection === 'access' ? 'Γû╝' : 'Γû╢'}</span>
+                  <span>🛡️ Access Control</span>
+                  <span>{expandedSection === 'access' ? '▼' : '▶'}</span>
                 </button>
                 {expandedSection === 'access' && (
                   <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px', borderTop: '1px solid var(--border)' }}>
@@ -3265,8 +3271,8 @@ function BuilderComponent() {
                         onChange={(e) => setBuilder(prev => ({ ...prev, accessMode: e.target.value }))}
                         style={{ fontSize: '0.8rem', padding: '6px' }}
                       >
-                        <option value="PUBLIC">≡ƒöô Public</option>
-                        <option value="PASSWORD_PROTECTED">≡ƒöÆ Password Protected</option>
+                        <option value="PUBLIC">🔓 Public</option>
+                        <option value="PASSWORD_PROTECTED">🔒 Password Protected</option>
                       </select>
                     </label>
                     
