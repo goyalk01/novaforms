@@ -2786,7 +2786,7 @@ function BuilderComponent() {
                               const res = await fetch(`${API_BASE}/api/form-config/${formId}/publish`, { method: 'POST' });
                               if (res.ok) {
                                 setBuilder(prev => ({ ...prev, published: true, status: 'OPEN' }));
-                                alert("Form successfully published!");
+                                setShowPublishSuccess(true);
                               }
                             } catch (e) {
                               alert("Publish failed");
@@ -4043,39 +4043,66 @@ function BuilderComponent() {
 
       {showPublishSuccess && (
         <div className="modal-overlay">
-          <div className="modal-container">
+          <div className="modal-container" style={{ maxHeight: '90vh', overflowY: 'auto' }}>
             <div className="modal-header">
               <div className="modal-icon">✓</div>
               <h3>Form Published!</h3>
             </div>
             <p className="modal-desc">
-              Your configuration has been saved and your public form is now live. Share the URL below with your users.
+              Your configuration has been saved and your public form is now live. Share the URL below, scan the QR code, or copy the embed code.
             </p>
             
-            <div className="modal-url-box">
-              <input
-                type="text"
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <span style={{ fontSize: '0.75rem', color: 'var(--muted)', fontWeight: 'bold' }}>Public Link</span>
+              <div className="modal-url-box">
+                <input
+                  type="text"
+                  readOnly
+                  value={typeof window !== 'undefined' ? `${window.location.origin}/form?id=${formId}` : `http://localhost:3000/form?id=${formId}`}
+                  className="modal-url-input"
+                />
+                <button
+                  type="button"
+                  className="modal-copy-btn"
+                  onClick={() => {
+                    const url = typeof window !== 'undefined' ? `${window.location.origin}/form?id=${formId}` : `http://localhost:3000/form?id=${formId}`;
+                    void navigator.clipboard.writeText(url);
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2000);
+                  }}
+                >
+                  {copied ? 'Copied!' : 'Copy'}
+                </button>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '16px', alignItems: 'center', margin: '4px 0', padding: '12px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--border)' }}>
+              <div style={{ background: 'white', padding: '6px', borderRadius: '8px', display: 'flex', justifyContent: 'center', alignItems: 'center', border: '2px solid var(--accent)', width: '84px', height: '84px', flexShrink: 0 }}>
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=72x72&data=${encodeURIComponent(typeof window !== 'undefined' ? `${window.location.origin}/form?id=${formId}` : `http://localhost:3000/form?id=${formId}`)}`}
+                  alt="Form QR Code"
+                  style={{ width: '72px', height: '72px' }}
+                />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--muted)', fontWeight: 'bold' }}>Access QR Code</span>
+                <span style={{ fontSize: '0.7rem', color: 'var(--muted)', lineHeight: '1.3' }}>Scan this QR code with a mobile camera to instantly access the live intake form.</span>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <span style={{ fontSize: '0.75rem', color: 'var(--muted)', fontWeight: 'bold' }}>Embed Code</span>
+              <textarea
                 readOnly
-                value={typeof window !== 'undefined' ? `${window.location.origin}/form` : 'http://localhost:3000/form'}
-                className="modal-url-input"
+                value={`<iframe src="${typeof window !== 'undefined' ? `${window.location.origin}/form?id=${formId}` : `http://localhost:3000/form?id=${formId}`}" width="100%" height="600px" frameborder="0"></iframe>`}
+                style={{ fontSize: '0.75rem', padding: '6px', height: '45px', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--border)', color: 'var(--text)', resize: 'none', borderRadius: '8px', outline: 'none' }}
+                onClick={(e) => (e.target as HTMLTextAreaElement).select()}
               />
-              <button
-                type="button"
-                className="modal-copy-btn"
-                onClick={() => {
-                  const url = typeof window !== 'undefined' ? `${window.location.origin}/form` : 'http://localhost:3000/form';
-                  void navigator.clipboard.writeText(url);
-                  setCopied(true);
-                  setTimeout(() => setCopied(false), 2000);
-                }}
-              >
-                {copied ? 'Copied!' : 'Copy'}
-              </button>
             </div>
 
             <div className="modal-actions">
               <a
-                href="/form"
+                href={`/form?id=${formId}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="modal-btn primary"
