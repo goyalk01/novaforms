@@ -17,57 +17,29 @@ public class FormConfigController {
   private final CollaboratorRepository collaboratorRepository;
   private final TransferRequestRepository transferRequestRepository;
   private final SubmissionRepository submissionRepository;
+  private final LifecycleService lifecycleService;
+  private final FormViewRepository formViewRepository;
+  private final LiveEmitterRegistry liveEmitterRegistry;
 
   public FormConfigController(
       FormConfigRepository formConfigRepository,
       CollaboratorRepository collaboratorRepository,
       TransferRequestRepository transferRequestRepository,
-      SubmissionRepository submissionRepository) {
+      SubmissionRepository submissionRepository,
+      LifecycleService lifecycleService,
+      FormViewRepository formViewRepository,
+      LiveEmitterRegistry liveEmitterRegistry) {
     this.formConfigRepository = formConfigRepository;
     this.collaboratorRepository = collaboratorRepository;
     this.transferRequestRepository = transferRequestRepository;
     this.submissionRepository = submissionRepository;
+    this.lifecycleService = lifecycleService;
+    this.formViewRepository = formViewRepository;
+    this.liveEmitterRegistry = liveEmitterRegistry;
   }
 
-  // Helper to calculate dynamic lifecycle status
-  private String calculateDynamicStatus(FormConfig config) {
-    if ("ARCHIVED".equalsIgnoreCase(config.getStatus())) {
-      return "ARCHIVED";
-    }
-    if (!Boolean.TRUE.equals(config.getPublished())) {
-      return "DRAFT";
-    }
-    if ("PAUSED".equalsIgnoreCase(config.getStatus())) {
-      return "PAUSED";
-    }
-    if ("CLOSED".equalsIgnoreCase(config.getStatus())) {
-      return "CLOSED";
-    }
-    
-    // Check Scheduled opening
-    if (config.getOpenAt() != null) {
-      if (Instant.now().isBefore(config.getOpenAt())) {
-        return "SCHEDULED";
-      }
-    }
-    
-    // Check Scheduled closing
-    if (config.getCloseAt() != null) {
-      if (Instant.now().isAfter(config.getCloseAt())) {
-        return "CLOSED";
-      }
-    }
-    
-    // Check Max Responses
-    if (config.getMaxResponses() != null && config.getMaxResponses() > 0) {
-      long count = submissionRepository.countByFormId(config.getId());
-      if (count >= config.getMaxResponses()) {
-        return "LIMIT_REACHED";
-      }
-    }
-    
-    return "OPEN";
-  }
+  // DTO for verify-password token response
+  public record PasswordVerificationResponse(String token) {}
 
   // Clone and sanitize FormConfig to hide sensitive values when password-protected
   private FormConfig sanitizeFormConfig(FormConfig original, boolean hideSensitive) {
@@ -94,6 +66,24 @@ public class FormConfigController {
     copy.setPasswordHash(null);
     copy.setMaxResponses(original.getMaxResponses());
     copy.setClosedReason(original.getClosedReason());
+
+    // Copy new attributes
+    copy.setVisibility(original.getVisibility());
+    copy.setAutoCloseDuration(original.getAutoCloseDuration());
+    copy.setBusinessHoursJson(original.getBusinessHoursJson());
+    copy.setStatusPagesJson(original.getStatusPagesJson());
+    
+    copy.setPublishState(original.getPublishState());
+    copy.setManualState(original.getManualState());
+    copy.setPublishedBy(original.getPublishedBy());
+    copy.setArchivedAt(original.getArchivedAt());
+    copy.setArchivedBy(original.getArchivedBy());
+    copy.setLastUpdated(original.getLastUpdated());
+    copy.setLastLifecycleChange(original.getLastLifecycleChange());
+    copy.setLastLifecycleUser(original.getLastLifecycleUser());
+    copy.setLogicJson(original.getLogicJson());
+    copy.setThemeJson(original.getThemeJson());
+    copy.setSharingJson(original.getSharingJson());
     
     if (hideSensitive) {
       copy.setQuestionsJson("[]");
@@ -105,14 +95,19 @@ public class FormConfigController {
     return copy;
   }
 
-  private FormConfigResponse getFormConfigResponse(FormConfig config, String email) {
+  private FormConfigResponse getFormConfigResponse(FormConfig config, String email, String token) {
     boolean hideSensitive = false;
-    if ("PASSWORD_PROTECTED".equalsIgnoreCase(config.getAccessMode())) {
+    if (AccessMode.PASSWORD_PROTECTED == config.getAccessMode()) {
       hideSensitive = true;
       if (email != null && !email.isBlank()) {
         List<Collaborator> collabs = collaboratorRepository.findByFormId(config.getId());
         boolean isCollab = collabs.stream().anyMatch(c -> c.getEmail().equalsIgnoreCase(email));
         if (isCollab) {
+          hideSensitive = false;
+        }
+      }
+      if (hideSensitive && token != null && !token.isBlank()) {
+        if (FormTokenUtils.verifyToken(token, config.getId())) {
           hideSensitive = false;
         }
       }
@@ -130,15 +125,30 @@ public class FormConfigController {
         .findFirstByFormIdAndStatusInOrderByIdDesc(config.getId(), List.of("PENDING", "ACCEPTED"));
 
     FormConfig sanitized = sanitizeFormConfig(config, hideSensitive);
-    String dynamicStatus = calculateDynamicStatus(config);
+    String dynamicStatus = lifecycleService.calculateDynamicStatus(config).name();
     long submissionCount = submissionRepository.countByFormId(config.getId());
 
     return new FormConfigResponse(sanitized, collaborators, activeTransfer.orElse(null), dynamicStatus, submissionCount);
   }
 
-  // Gets or initializes the singleton form configuration (id=1) - for backwards compatibility
+  private void validateVisibility(FormConfig config, String email) {
+    if (Visibility.PRIVATE == config.getVisibility()) {
+      boolean isCollab = false;
+      if (email != null && !email.isBlank()) {
+        List<Collaborator> collabs = collaboratorRepository.findByFormId(config.getId());
+        isCollab = collabs.stream().anyMatch(c -> c.getEmail().equalsIgnoreCase(email));
+      }
+      if (!isCollab) {
+        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "This form is private and only accessible by collaborators.");
+      }
+    }
+  }
+
+  // Gets or initializes the singleton form configuration (id=1)
   @GetMapping
-  public FormConfigResponse getConfig(@RequestParam(required = false) String email) {
+  public ApiResponse<FormConfigResponse> getConfig(
+      @RequestParam(required = false) String email,
+      @RequestHeader(value = "X-Form-Token", required = false) String token) {
     FormConfig config = formConfigRepository.findById(1L).orElseGet(() -> {
       FormConfig defaultConf = new FormConfig();
       defaultConf.setId(1L);
@@ -156,24 +166,29 @@ public class FormConfigController {
       defaultConf.setStatus("DRAFT");
       defaultConf.setPublished(false);
       defaultConf.setTimezone("UTC");
-      defaultConf.setAccessMode("PUBLIC");
+      defaultConf.setAccessMode(AccessMode.PUBLIC);
       defaultConf.setMaxResponses(0);
+      defaultConf.setVisibility(Visibility.PUBLIC);
+      defaultConf.setLogicJson("[]");
+      defaultConf.setThemeJson("{}");
+      defaultConf.setSharingJson("{}");
       return defaultConf;
     });
 
-    // Save default config if not found initially so that it exists in the database
     if (config.getPublished() == null) {
       config = formConfigRepository.save(config);
     }
 
-    return getFormConfigResponse(config, email);
+    validateVisibility(config, email);
+    FormConfigResponse response = getFormConfigResponse(config, email, token);
+    return new ApiResponse<>(HttpStatus.OK.value(), "Success", response);
   }
 
   // Lists all forms a user is involved in
   @GetMapping("/list")
-  public List<FormSummaryResponse> listForms(@RequestParam String email) {
+  public ApiResponse<List<FormSummaryResponse>> listForms(@RequestParam String email) {
     List<Collaborator> collabs = collaboratorRepository.findByEmailIgnoreCase(email);
-    return collabs.stream().map(collab -> {
+    List<FormSummaryResponse> data = collabs.stream().map(collab -> {
       FormConfig config = formConfigRepository.findById(collab.getFormId()).orElse(null);
       if (config == null) return null;
       return new FormSummaryResponse(
@@ -185,11 +200,12 @@ public class FormConfigController {
           config.getBannerUrl()
       );
     }).filter(Objects::nonNull).toList();
+    return new ApiResponse<>(HttpStatus.OK.value(), "Success", data);
   }
 
   // Creates a new form config
   @PostMapping("/create")
-  public FormConfig createForm(@RequestBody CreateFormRequest request) {
+  public ApiResponse<FormConfig> createForm(@RequestBody CreateFormRequest request) {
     FormConfig config = new FormConfig();
     config.setName(request.getName());
     config.setTitle(request.getTitle());
@@ -205,32 +221,133 @@ public class FormConfigController {
     config.setStatus("DRAFT");
     config.setPublished(false);
     config.setTimezone("UTC");
-    config.setAccessMode("PUBLIC");
+    config.setAccessMode(AccessMode.PUBLIC);
     config.setMaxResponses(0);
+    config.setVisibility(Visibility.PUBLIC);
+    config.setLogicJson("[]");
+    config.setThemeJson("{}");
+    config.setSharingJson("{}");
 
     FormConfig saved = formConfigRepository.save(config);
 
-    // Make request.getOwnerEmail() the OWNER of this form
     Collaborator collab = new Collaborator(saved.getId(), request.getOwnerEmail(), "OWNER");
     collaboratorRepository.save(collab);
 
-    return saved;
+    return new ApiResponse<>(HttpStatus.OK.value(), "Form created successfully", saved);
   }
 
   // Gets form config by ID
   @GetMapping("/{id}")
-  public FormConfigResponse getConfigById(@PathVariable Long id, @RequestParam(required = false) String email) {
+  public ApiResponse<FormConfigResponse> getConfigById(
+      @PathVariable Long id,
+      @RequestParam(required = false) String email,
+      @RequestHeader(value = "X-Form-Token", required = false) String token) {
     FormConfig config = formConfigRepository.findById(id)
         .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Form config not found"));
 
-    return getFormConfigResponse(config, email);
+    validateVisibility(config, email);
+    FormConfigResponse response = getFormConfigResponse(config, email, token);
+    return new ApiResponse<>(HttpStatus.OK.value(), "Success", response);
+  }
+
+  public record RecordViewRequest(
+      String userAgent,
+      String browser,
+      String os,
+      String deviceType,
+      String country,
+      String city,
+      String referer
+  ) {}
+
+  @PostMapping("/{id}/view")
+  public ApiResponse<Void> recordView(
+      @PathVariable Long id,
+      @RequestBody RecordViewRequest request) {
+    if (!formConfigRepository.existsById(id)) {
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Form config not found");
+    }
+
+    FormView view = new FormView();
+    view.setFormId(id);
+    view.setUserAgent(request.userAgent());
+    view.setBrowser(request.browser());
+    view.setOs(request.os());
+    view.setDeviceType(request.deviceType());
+    view.setCountry(request.country());
+    view.setCity(request.city());
+    view.setReferer(request.referer());
+    view.setCreatedAt(Instant.now());
+
+    formViewRepository.save(view);
+
+    liveEmitterRegistry.broadcast(id, "VIEW_CREATED", view);
+
+    return new ApiResponse<>(HttpStatus.OK.value(), "View recorded successfully", null);
   }
 
   // Updates form customization fields by ID
   @PostMapping("/{id}")
-  public FormConfig updateConfig(@PathVariable Long id, @RequestBody FormConfigRequest request) {
+  public ApiResponse<FormConfig> updateConfig(
+      @PathVariable Long id, 
+      @RequestBody FormConfigRequest request,
+      @RequestParam(required = false) String email) {
     FormConfig config = formConfigRepository.findById(id)
         .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Form config not found"));
+
+    boolean lifecycleChanged = false;
+
+    // Detect lifecycle changes
+    if (request.getStatus() != null && !Objects.equals(request.getStatus(), config.getStatus())) {
+      lifecycleChanged = true;
+    }
+    if (request.getPublished() != null && !Objects.equals(request.getPublished(), config.getPublished())) {
+      lifecycleChanged = true;
+    }
+    if (!Objects.equals(request.getOpenAt(), config.getOpenAt())) {
+      lifecycleChanged = true;
+    }
+    if (!Objects.equals(request.getCloseAt(), config.getCloseAt())) {
+      lifecycleChanged = true;
+    }
+    if (request.getAccessMode() != null) {
+      String requestAccessStr = request.getAccessMode().toUpperCase();
+      String currentAccessStr = config.getAccessMode() != null ? config.getAccessMode().name() : null;
+      if (!Objects.equals(requestAccessStr, currentAccessStr)) {
+        lifecycleChanged = true;
+      }
+    }
+    if (request.getPassword() != null && !request.getPassword().isBlank()) {
+      lifecycleChanged = true;
+    }
+    if (request.getMaxResponses() != null && !Objects.equals(request.getMaxResponses(), config.getMaxResponses())) {
+      lifecycleChanged = true;
+    }
+    if (request.getVisibility() != null) {
+      String requestVisStr = request.getVisibility().toUpperCase();
+      String currentVisStr = config.getVisibility() != null ? config.getVisibility().name() : null;
+      if (!Objects.equals(requestVisStr, currentVisStr)) {
+        lifecycleChanged = true;
+      }
+    }
+    if (!Objects.equals(request.getAutoCloseDuration(), config.getAutoCloseDuration())) {
+      lifecycleChanged = true;
+    }
+    if (!Objects.equals(request.getBusinessHoursJson(), config.getBusinessHoursJson())) {
+      lifecycleChanged = true;
+    }
+    if (!Objects.equals(request.getStatusPagesJson(), config.getStatusPagesJson())) {
+      lifecycleChanged = true;
+    }
+    if (request.getLogicJson() != null && !Objects.equals(request.getLogicJson(), config.getLogicJson())) {
+      lifecycleChanged = true;
+    }
+    if (request.getThemeJson() != null && !Objects.equals(request.getThemeJson(), config.getThemeJson())) {
+      lifecycleChanged = true;
+    }
+    if (request.getSharingJson() != null && !Objects.equals(request.getSharingJson(), config.getSharingJson())) {
+      lifecycleChanged = true;
+    }
 
     config.setName(request.getName());
     config.setTitle(request.getTitle());
@@ -243,15 +360,34 @@ public class FormConfigController {
     config.setLayoutDensity(request.getLayoutDensity());
     config.setSubmissionMode(request.getSubmissionMode());
     config.setTotalPages(request.getTotalPages());
+    if (request.getLogicJson() != null) {
+      config.setLogicJson(request.getLogicJson());
+    }
+    if (request.getThemeJson() != null) {
+      config.setThemeJson(request.getThemeJson());
+    }
+    if (request.getSharingJson() != null) {
+      config.setSharingJson(request.getSharingJson());
+    }
 
     // Update Lifecycle Fields
     if (request.getStatus() != null) {
-      config.setStatus(request.getStatus());
+      String status = request.getStatus().toUpperCase();
+      if (status.equals("OPEN")) {
+        config.setStatus("PUBLISHED");
+      } else {
+        config.setStatus(status);
+      }
     }
     if (request.getPublished() != null) {
       config.setPublished(request.getPublished());
-      if (request.getPublished() && config.getPublishedAt() == null) {
-        config.setPublishedAt(Instant.now());
+      if (request.getPublished()) {
+        config.setPublishState(PublishState.PUBLISHED);
+        if (config.getPublishedAt() == null) {
+          config.setPublishedAt(Instant.now());
+        }
+      } else {
+        config.setPublishState(PublishState.DRAFT);
       }
     }
     config.setOpenAt(request.getOpenAt());
@@ -260,10 +396,10 @@ public class FormConfigController {
       config.setTimezone(request.getTimezone());
     }
     if (request.getAccessMode() != null) {
-      config.setAccessMode(request.getAccessMode());
-      if ("PUBLIC".equalsIgnoreCase(request.getAccessMode())) {
+      config.setAccessMode(AccessMode.valueOf(request.getAccessMode().toUpperCase()));
+      if (AccessMode.PUBLIC == config.getAccessMode()) {
         config.setPasswordHash(null);
-      } else if ("PASSWORD_PROTECTED".equalsIgnoreCase(request.getAccessMode()) && request.getPassword() != null && !request.getPassword().isBlank()) {
+      } else if (AccessMode.PASSWORD_PROTECTED == config.getAccessMode() && request.getPassword() != null && !request.getPassword().isBlank()) {
         config.setPasswordHash(PasswordUtils.hashPassword(request.getPassword()));
       }
     }
@@ -272,65 +408,109 @@ public class FormConfigController {
     }
     config.setClosedReason(request.getClosedReason());
 
-    return formConfigRepository.save(config);
+    // Update new Phase 2 columns
+    if (request.getVisibility() != null) {
+      config.setVisibility(Visibility.valueOf(request.getVisibility().toUpperCase()));
+    }
+    config.setAutoCloseDuration(request.getAutoCloseDuration());
+    config.setBusinessHoursJson(request.getBusinessHoursJson());
+    config.setStatusPagesJson(request.getStatusPagesJson());
+
+    // Log last metadata edits
+    config.setLastUpdated(Instant.now());
+    if (lifecycleChanged) {
+      config.setLastLifecycleChange(Instant.now());
+      config.setLastLifecycleUser(email != null ? email : "anonymous");
+    }
+
+    FormConfig saved = formConfigRepository.save(config);
+    return new ApiResponse<>(HttpStatus.OK.value(), "Configuration updated successfully", saved);
   }
 
   // Form state lifecycle transitions
   @PostMapping("/{id}/publish")
-  public FormConfigResponse publishForm(@PathVariable Long id) {
+  public ApiResponse<FormConfigResponse> publishForm(@PathVariable Long id, @RequestParam(required = false) String email) {
     FormConfig config = formConfigRepository.findById(id)
         .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Form config not found"));
     config.setPublished(true);
     config.setPublishedAt(Instant.now());
-    config.setStatus("OPEN");
+    config.setPublishedBy(email != null ? email : "anonymous");
+    config.setStatus("PUBLISHED");
+    config.setPublishState(PublishState.PUBLISHED);
+    config.setLastLifecycleChange(Instant.now());
+    config.setLastLifecycleUser(email != null ? email : "anonymous");
+    config.setLastUpdated(Instant.now());
     FormConfig saved = formConfigRepository.save(config);
-    return getFormConfigResponse(saved, null);
+    FormConfigResponse response = getFormConfigResponse(saved, email, null);
+    return new ApiResponse<>(HttpStatus.OK.value(), "Form published successfully", response);
   }
 
   @PostMapping("/{id}/unpublish")
-  public FormConfigResponse unpublishForm(@PathVariable Long id) {
+  public ApiResponse<FormConfigResponse> unpublishForm(@PathVariable Long id, @RequestParam(required = false) String email) {
     FormConfig config = formConfigRepository.findById(id)
         .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Form config not found"));
     config.setPublished(false);
     config.setStatus("DRAFT");
+    config.setPublishState(PublishState.DRAFT);
+    config.setLastLifecycleChange(Instant.now());
+    config.setLastLifecycleUser(email != null ? email : "anonymous");
+    config.setLastUpdated(Instant.now());
     FormConfig saved = formConfigRepository.save(config);
-    return getFormConfigResponse(saved, null);
+    FormConfigResponse response = getFormConfigResponse(saved, email, null);
+    return new ApiResponse<>(HttpStatus.OK.value(), "Form unpublished successfully", response);
   }
 
   @PostMapping("/{id}/pause")
-  public FormConfigResponse pauseForm(@PathVariable Long id) {
+  public ApiResponse<FormConfigResponse> pauseForm(@PathVariable Long id, @RequestParam(required = false) String email) {
     FormConfig config = formConfigRepository.findById(id)
         .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Form config not found"));
     config.setStatus("PAUSED");
+    config.setManualState(ManualState.PAUSED);
+    config.setLastLifecycleChange(Instant.now());
+    config.setLastLifecycleUser(email != null ? email : "anonymous");
+    config.setLastUpdated(Instant.now());
     FormConfig saved = formConfigRepository.save(config);
-    return getFormConfigResponse(saved, null);
+    FormConfigResponse response = getFormConfigResponse(saved, email, null);
+    return new ApiResponse<>(HttpStatus.OK.value(), "Form paused successfully", response);
   }
 
   @PostMapping("/{id}/resume")
-  public FormConfigResponse resumeForm(@PathVariable Long id) {
+  public ApiResponse<FormConfigResponse> resumeForm(@PathVariable Long id, @RequestParam(required = false) String email) {
     FormConfig config = formConfigRepository.findById(id)
         .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Form config not found"));
-    config.setStatus("OPEN");
+    config.setStatus("PUBLISHED");
+    config.setManualState(ManualState.NORMAL);
+    config.setLastLifecycleChange(Instant.now());
+    config.setLastLifecycleUser(email != null ? email : "anonymous");
+    config.setLastUpdated(Instant.now());
     FormConfig saved = formConfigRepository.save(config);
-    return getFormConfigResponse(saved, null);
+    FormConfigResponse response = getFormConfigResponse(saved, email, null);
+    return new ApiResponse<>(HttpStatus.OK.value(), "Form resumed successfully", response);
   }
 
   @PostMapping("/{id}/archive")
-  public FormConfigResponse archiveForm(@PathVariable Long id) {
+  public ApiResponse<FormConfigResponse> archiveForm(@PathVariable Long id, @RequestParam(required = false) String email) {
     FormConfig config = formConfigRepository.findById(id)
         .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Form config not found"));
     config.setStatus("ARCHIVED");
+    config.setPublishState(PublishState.ARCHIVED);
+    config.setArchivedAt(Instant.now());
+    config.setArchivedBy(email != null ? email : "anonymous");
+    config.setLastLifecycleChange(Instant.now());
+    config.setLastLifecycleUser(email != null ? email : "anonymous");
+    config.setLastUpdated(Instant.now());
     FormConfig saved = formConfigRepository.save(config);
-    return getFormConfigResponse(saved, null);
+    FormConfigResponse response = getFormConfigResponse(saved, email, null);
+    return new ApiResponse<>(HttpStatus.OK.value(), "Form archived successfully", response);
   }
 
-  // Verify form password challenge and return full configuration response on success
+  // Verify form password challenge and return token only on success
   @PostMapping("/{id}/verify-password")
-  public FormConfigResponse verifyPassword(@PathVariable Long id, @RequestBody PasswordVerificationRequest request) {
+  public ApiResponse<PasswordVerificationResponse> verifyPassword(@PathVariable Long id, @RequestBody PasswordVerificationRequest request) {
     FormConfig config = formConfigRepository.findById(id)
         .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Form config not found"));
 
-    if ("PASSWORD_PROTECTED".equalsIgnoreCase(config.getAccessMode())) {
+    if (AccessMode.PASSWORD_PROTECTED == config.getAccessMode()) {
       if (config.getPasswordHash() != null) {
         if (request.getPassword() == null || !PasswordUtils.verifyPassword(request.getPassword(), config.getPasswordHash())) {
           throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Incorrect password");
@@ -338,32 +518,36 @@ public class FormConfigController {
       }
     }
 
-    return getFormConfigResponseInternal(config, false);
+    String token = FormTokenUtils.generateToken(id, 7200000L); // 2 hours
+    return new ApiResponse<>(HttpStatus.OK.value(), "Password verified successfully", new PasswordVerificationResponse(token));
   }
 
   // Adds or updates collaborator by form ID
   @PostMapping("/{id}/collaborators")
-  public Collaborator saveCollaborator(@PathVariable Long id, @RequestBody CollaboratorRequest request) {
+  public ApiResponse<Collaborator> saveCollaborator(@PathVariable Long id, @RequestBody CollaboratorRequest request) {
     Optional<Collaborator> existing = collaboratorRepository.findByFormIdAndEmail(id, request.getEmail());
+    Collaborator saved;
     if (existing.isPresent()) {
       Collaborator c = existing.get();
       c.setRole(request.getRole());
-      return collaboratorRepository.save(c);
+      saved = collaboratorRepository.save(c);
     } else {
       Collaborator c = new Collaborator(id, request.getEmail(), request.getRole());
-      return collaboratorRepository.save(c);
+      saved = collaboratorRepository.save(c);
     }
+    return new ApiResponse<>(HttpStatus.OK.value(), "Collaborator saved successfully", saved);
   }
 
-  // Removes collaborator (collaborator ID is globally unique)
+  // Removes collaborator
   @DeleteMapping("/collaborators/{collabId}")
-  public void deleteCollaborator(@PathVariable Long collabId) {
+  public ApiResponse<Void> deleteCollaborator(@PathVariable Long collabId) {
     collaboratorRepository.deleteById(collabId);
+    return new ApiResponse<>(HttpStatus.OK.value(), "Collaborator removed successfully", null);
   }
 
   // State Machine 1: Initiate Transfer Request by form ID
   @PostMapping("/{id}/transfer/initiate")
-  public TransferRequest initiateTransfer(@PathVariable Long id, @RequestBody InitiateTransferRequest request) {
+  public ApiResponse<TransferRequest> initiateTransfer(@PathVariable Long id, @RequestBody InitiateTransferRequest request) {
     // Cancel any existing active requests first
     List<TransferRequest> active = transferRequestRepository.findByFormIdAndStatus(id, "PENDING");
     for (TransferRequest tr : active) {
@@ -383,31 +567,32 @@ public class FormConfigController {
         request.getProposedNewRole(),
         "PENDING"
     );
-    return transferRequestRepository.save(tr);
+    TransferRequest saved = transferRequestRepository.save(tr);
+    return new ApiResponse<>(HttpStatus.OK.value(), "Transfer request initiated", saved);
   }
 
   // State Machine 2: Recipient accepts transfer request by form ID
   @PostMapping("/{id}/transfer/accept")
-  public TransferRequest acceptTransfer(@PathVariable Long id) {
+  public ApiResponse<TransferRequest> acceptTransfer(@PathVariable Long id) {
     Optional<TransferRequest> active = transferRequestRepository.findFirstByFormIdAndStatusOrderByIdDesc(id, "PENDING");
     if (active.isPresent()) {
       TransferRequest tr = active.get();
       tr.setStatus("ACCEPTED");
-      return transferRequestRepository.save(tr);
+      TransferRequest saved = transferRequestRepository.save(tr);
+      return new ApiResponse<>(HttpStatus.OK.value(), "Transfer accepted", saved);
     }
     throw new IllegalArgumentException("No pending transfer request found");
   }
 
-  // State Machine 3: Initiator finalizes (confirming acceptor is ready) by form ID
+  // State Machine 3: Initiator finalizes by form ID
   @PostMapping("/{id}/transfer/confirm")
-  public TransferRequest confirmTransfer(@PathVariable Long id) {
+  public ApiResponse<TransferRequest> confirmTransfer(@PathVariable Long id) {
     Optional<TransferRequest> active = transferRequestRepository.findFirstByFormIdAndStatusOrderByIdDesc(id, "ACCEPTED");
     if (active.isPresent()) {
       TransferRequest tr = active.get();
       tr.setStatus("COMPLETED");
 
       // Execute roles swap
-      // 1. Set the new owner
       Optional<Collaborator> newOwnerOpt = collaboratorRepository.findByFormIdAndEmail(id, tr.getToEmail());
       if (newOwnerOpt.isPresent()) {
         Collaborator newOwner = newOwnerOpt.get();
@@ -417,7 +602,6 @@ public class FormConfigController {
         collaboratorRepository.save(new Collaborator(id, tr.getToEmail(), "OWNER"));
       }
 
-      // 2. Set the old owner's new role
       Optional<Collaborator> oldOwnerOpt = collaboratorRepository.findByFormIdAndEmail(id, tr.getFromEmail());
       if (oldOwnerOpt.isPresent()) {
         Collaborator oldOwner = oldOwnerOpt.get();
@@ -427,20 +611,22 @@ public class FormConfigController {
         collaboratorRepository.save(new Collaborator(id, tr.getFromEmail(), tr.getProposedNewRole()));
       }
 
-      return transferRequestRepository.save(tr);
+      TransferRequest saved = transferRequestRepository.save(tr);
+      return new ApiResponse<>(HttpStatus.OK.value(), "Transfer completed successfully", saved);
     }
     throw new IllegalArgumentException("No accepted transfer request found to finalize");
   }
 
   // Cancel Transfer Request by form ID
   @PostMapping("/{id}/transfer/cancel")
-  public TransferRequest cancelTransfer(@PathVariable Long id) {
+  public ApiResponse<TransferRequest> cancelTransfer(@PathVariable Long id) {
     Optional<TransferRequest> active = transferRequestRepository
         .findFirstByFormIdAndStatusInOrderByIdDesc(id, List.of("PENDING", "ACCEPTED"));
     if (active.isPresent()) {
       TransferRequest tr = active.get();
       tr.setStatus("CANCELLED");
-      return transferRequestRepository.save(tr);
+      TransferRequest saved = transferRequestRepository.save(tr);
+      return new ApiResponse<>(HttpStatus.OK.value(), "Transfer cancelled successfully", saved);
     }
     throw new IllegalArgumentException("No active transfer request found to cancel");
   }
@@ -505,6 +691,7 @@ public class FormConfigController {
     private TransferRequest activeTransfer;
     private String dynamicStatus;
     private long submissionCount;
+    private String sessionToken;
 
     public FormConfigResponse(FormConfig config, List<Collaborator> collaborators, TransferRequest activeTransfer) {
       this.config = config;
@@ -527,6 +714,8 @@ public class FormConfigController {
     public void setDynamicStatus(String dynamicStatus) { this.dynamicStatus = dynamicStatus; }
     public long getSubmissionCount() { return submissionCount; }
     public void setSubmissionCount(long submissionCount) { this.submissionCount = submissionCount; }
+    public String getSessionToken() { return sessionToken; }
+    public void setSessionToken(String sessionToken) { this.sessionToken = sessionToken; }
   }
 
   public static class FormConfigRequest {
@@ -551,6 +740,21 @@ public class FormConfigController {
     private String password;
     private Integer maxResponses;
     private String closedReason;
+
+    private String visibility;
+    private String autoCloseDuration;
+    private String businessHoursJson;
+    private String statusPagesJson;
+    private String logicJson;
+    private String themeJson;
+    private String sharingJson;
+
+    public String getLogicJson() { return logicJson; }
+    public void setLogicJson(String logicJson) { this.logicJson = logicJson; }
+    public String getThemeJson() { return themeJson; }
+    public void setThemeJson(String themeJson) { this.themeJson = themeJson; }
+    public String getSharingJson() { return sharingJson; }
+    public void setSharingJson(String sharingJson) { this.sharingJson = sharingJson; }
 
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
@@ -593,6 +797,15 @@ public class FormConfigController {
     public void setMaxResponses(Integer maxResponses) { this.maxResponses = maxResponses; }
     public String getClosedReason() { return closedReason; }
     public void setClosedReason(String closedReason) { this.closedReason = closedReason; }
+
+    public String getVisibility() { return visibility; }
+    public void setVisibility(String visibility) { this.visibility = visibility; }
+    public String getAutoCloseDuration() { return autoCloseDuration; }
+    public void setAutoCloseDuration(String autoCloseDuration) { this.autoCloseDuration = autoCloseDuration; }
+    public String getBusinessHoursJson() { return businessHoursJson; }
+    public void setBusinessHoursJson(String businessHoursJson) { this.businessHoursJson = businessHoursJson; }
+    public String getStatusPagesJson() { return statusPagesJson; }
+    public void setStatusPagesJson(String statusPagesJson) { this.statusPagesJson = statusPagesJson; }
   }
 
   public static class CollaboratorRequest {

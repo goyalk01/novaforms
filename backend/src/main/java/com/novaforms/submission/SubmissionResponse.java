@@ -19,7 +19,16 @@ public record SubmissionResponse(
     String questionsJson,
     String answersJson,
     String message,
-    Instant createdAt) {
+    Instant createdAt,
+    
+    // Analytics fields
+    String browser,
+    String os,
+    String deviceType,
+    String country,
+    String city,
+    String referer,
+    Integer completionTimeSeconds) {
   static SubmissionResponse fromEntity(Submission submission) {
     return new SubmissionResponse(
         submission.getId(),
@@ -37,6 +46,13 @@ public record SubmissionResponse(
         submission.getQuestionsJson(),
         submission.getAnswersJson(),
         submission.getMessage(),
-        submission.getCreatedAt());
+        submission.getCreatedAt(),
+        submission.getBrowser(),
+        submission.getOs(),
+        submission.getDeviceType(),
+        submission.getCountry(),
+        submission.getCity(),
+        submission.getReferer(),
+        submission.getCompletionTimeSeconds());
   }
 }

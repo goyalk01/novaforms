@@ -507,86 +507,6 @@ function BuilderComponent() {
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [expandedSection, setExpandedSection] = useState<string | null>('lifecycle');
 
-  // ─── Phase 3 State ──────────────────────────────────────────────────────────
-  // AI Co-pilot
-  const [aiPromptInput, setAiPromptInput] = useState('');
-  const [aiGenerating, setAiGenerating] = useState(false);
-  const [aiSelectedQuestion, setAiSelectedQuestion] = useState('');
-  const [aiAction, setAiAction] = useState('rewrite');
-  const [aiActionContext, setAiActionContext] = useState('');
-  const [aiActionRunning, setAiActionRunning] = useState(false);
-
-  // Logic Rules
-  const [logicRules, setLogicRules] = useState<any[]>([]);
-
-  // Sharing
-  const [sharingSettings, setSharingSettings] = useState<{ shortCode: string; isOneTimeLink: boolean }>({ shortCode: Math.random().toString(36).substring(2, 8), isOneTimeLink: false });
-  const [sharecopied, setShareCopied] = useState(false);
-
-  // Templates
-  const [templateSearch, setTemplateSearch] = useState('');
-  const [templateCategory, setTemplateCategory] = useState('all');
-
-  const templateGallery = [
-    { id: 't-hackathon', title: 'Hackathon Registration', description: 'Developer resumes, github, track selection.', category: 'hackathons', theme: 'cyberpunk', questions: [{ id: 'q_name', title: 'Full Name', type: 'short-answer', required: true }, { id: 'q_github', title: 'GitHub URL', type: 'url', required: true }, { id: 'q_track', title: 'Preferred Track', type: 'multiple-choice', required: true, options: ['AI Co-pilots', 'Web3', 'Cyberpunk Frontend'] }] },
-    { id: 't-survey', title: 'Customer Feedback Survey', description: 'Satisfaction scores and suggestions.', category: 'feedback', theme: 'silver', questions: [{ id: 'q_name', title: 'Respondent Name', type: 'short-answer', required: false }, { id: 'q_sat', title: 'Overall Satisfaction', type: 'star-rating', required: true }, { id: 'q_nps', title: 'Net Promoter Score', type: 'nps', required: true }] },
-    { id: 't-quiz', title: 'General Trivia Quiz', description: 'Educational quiz with multiple choice questions.', category: 'education', theme: 'graphite', questions: [{ id: 'q_name', title: 'Student Name', type: 'short-answer', required: true }, { id: 'q_q1', title: 'Which compiler translates Java bytecode?', type: 'dropdown', required: true, options: ['JVM JIT', 'GCC', 'V8 Engine'] }] },
-    { id: 't-health', title: 'Patient Intake Form', description: 'Secure health intake with contacts and insurance.', category: 'healthcare', theme: 'silver', questions: [{ id: 'q_name', title: 'Full Patient Name', type: 'short-answer', required: true }, { id: 'q_address', title: 'Home Address', type: 'address', required: true }, { id: 'q_phone', title: 'Mobile Contact', type: 'phone', required: true }] }
-  ];
-
-  const filteredTemplates = useMemo(() => templateGallery.filter(t => {
-    const matchSearch = t.title.toLowerCase().includes(templateSearch.toLowerCase()) || t.description.toLowerCase().includes(templateSearch.toLowerCase());
-    const matchCat = templateCategory === 'all' || t.category === templateCategory;
-    return matchSearch && matchCat;
-  }), [templateSearch, templateCategory]);
-
-  const loadTemplateIntoBuilder = (tpl: any) => {
-    if (!confirm(`Load template "${tpl.title}"? This will overwrite current questions.`)) return;
-    setBuilder(prev => ({ ...prev, formTitle: tpl.title, formDescription: tpl.description, themeMode: tpl.theme }));
-    const newQs = tpl.questions.map((q: any) => ({ id: q.id, title: q.title, type: q.type, required: q.required || false, helpText: '', placeholder: '', options: q.options || [], scaleMax: 5, pageNumber: 1 }));
-    setQuestions(newQs);
-    setAnswers(buildInitialAnswers(newQs));
-    alert('Template loaded!');
-  };
-
-  const handleAIFormGeneration = async () => {
-    if (!aiPromptInput.trim()) return;
-    setAiGenerating(true);
-    try {
-      const res = await fetch(`${API_BASE}/api/ai/generate-form`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt: aiPromptInput.trim() }) });
-      if (res.ok) {
-        const json = await res.json();
-        const content = json.data !== undefined ? json.data : json;
-        const formObj = JSON.parse(content);
-        setBuilder(prev => ({ ...prev, formTitle: formObj.title || prev.formTitle, formDescription: formObj.description || prev.formDescription, themeMode: (formObj.theme as ThemeMode) || prev.themeMode }));
-        if (Array.isArray(formObj.questions) && formObj.questions.length > 0) {
-          const qList = formObj.questions.map((q: any) => ({ id: q.id || `q-${crypto.randomUUID()}`, title: q.title || 'Question', type: q.type || 'short-answer', required: q.required ?? false, helpText: q.helpText || '', placeholder: q.placeholder || '', options: q.options || [], scaleMax: q.scaleMax || 5, pageNumber: q.pageNumber || 1 }));
-          setQuestions(qList);
-          setAnswers(buildInitialAnswers(qList));
-        }
-        setAiPromptInput('');
-        alert('Form generated by AI!');
-      } else { alert('AI generation failed.'); }
-    } catch (e) { alert('Network error.'); } finally { setAiGenerating(false); }
-  };
-
-  const handleAIQuestionAction = async () => {
-    const targetQ = questions.find(q => q.id === aiSelectedQuestion);
-    if (!targetQ) return;
-    setAiActionRunning(true);
-    try {
-      const res = await fetch(`${API_BASE}/api/ai/edit-question`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: aiAction, questionJson: JSON.stringify(targetQ), context: aiActionContext.trim() }) });
-      if (res.ok) {
-        const json = await res.json();
-        const content = json.data !== undefined ? json.data : json;
-        const updatedQ = JSON.parse(content) as Question;
-        setQuestions(prev => prev.map(q => q.id === aiSelectedQuestion ? { ...q, ...updatedQ } : q));
-        setAiActionContext('');
-        alert('Question refined!');
-      } else { alert('AI question action failed.'); }
-    } catch (e) { alert('Network error.'); } finally { setAiActionRunning(false); }
-  };
-
   const [accentColor, setAccentColor] = useState<string>(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('novaforms-accent') ?? 'default';
@@ -702,27 +622,6 @@ function BuilderComponent() {
               console.error("Failed to parse questionsJson", e);
             }
           }
-          if (conf.logicJson) {
-            try {
-              const l = JSON.parse(conf.logicJson);
-              if (Array.isArray(l)) {
-                setLogicRules(l);
-              }
-            } catch (e) {
-              console.error("Failed to parse logicJson", e);
-            }
-          }
-          if (conf.themeJson) {
-            try {
-              const themeObj = JSON.parse(conf.themeJson);
-              if (themeObj.accentColor) setAccentColor(themeObj.accentColor);
-              if (themeObj.borderRadius) setBorderRadius(themeObj.borderRadius);
-              if (themeObj.gridOpacity !== undefined) setGridOpacity(themeObj.gridOpacity);
-              if (themeObj.enableBlur !== undefined) setEnableBlur(themeObj.enableBlur);
-            } catch (e) {
-              console.error("Failed to parse themeJson", e);
-            }
-          }
         }
         setCollaborators(data.collaborators || []);
         setActiveTransfer(data.activeTransfer || null);
@@ -741,9 +640,7 @@ function BuilderComponent() {
       try {
         const response = await fetch(`${API_BASE}/api/submissions?formId=${formId}`, { cache: 'no-store' });
         if (response.ok) {
-          const resData = await response.json();
-          const data = resData.data !== undefined ? resData.data : resData;
-          setSubmissions(data as Submission[]);
+          setSubmissions((await response.json()) as Submission[]);
         }
       } catch {
         setStatus('Backend offline');
@@ -784,7 +681,6 @@ function BuilderComponent() {
           videoUrl: builder.videoUrl,
           questionsJson: JSON.stringify(questions),
           settingsJson: JSON.stringify(builder.settings),
-          logicJson: JSON.stringify(logicRules),
           themeMode: builder.themeMode,
           layoutDensity: builder.densityMode,
           submissionMode: builder.submissionMode,
@@ -797,8 +693,7 @@ function BuilderComponent() {
           accessMode: builder.accessMode,
           password: builder.password,
           maxResponses: builder.maxResponses,
-          closedReason: builder.closedReason,
-          themeJson: JSON.stringify({ accentColor, borderRadius, gridOpacity, enableBlur })
+          closedReason: builder.closedReason
         };
         const res = await fetch(`${API_BASE}/api/form-config/${formId}`, {
           method: 'POST',
@@ -842,12 +737,7 @@ function BuilderComponent() {
     builder.password,
     builder.maxResponses,
     builder.closedReason,
-    formId,
-    logicRules,
-    accentColor,
-    borderRadius,
-    gridOpacity,
-    enableBlur
+    formId
   ]);
 
   useEffect(() => {
@@ -2365,7 +2255,6 @@ function BuilderComponent() {
         videoUrl: builder.videoUrl,
         questionsJson: JSON.stringify(questions),
         settingsJson: JSON.stringify(builder.settings),
-        logicJson: JSON.stringify(logicRules),
         themeMode: builder.themeMode,
         layoutDensity: builder.densityMode,
         submissionMode: builder.submissionMode,
@@ -3301,417 +3190,6 @@ function BuilderComponent() {
                   <span>{entry.description}</span>
                 </button>
               ))}
-            </div>
-          </div>
-
-          <div className="rail-block">
-            <p className="section-label">Intelligence & Tools</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {/* AI Co-pilot Accordion */}
-              <div className="settings-accordion-item" style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }}>
-                <button
-                  type="button"
-                  onClick={() => setExpandedSection(expandedSection === 'ai-copilot' ? null : 'ai-copilot')}
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    background: 'rgba(255,255,255,0.02)',
-                    border: 'none',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    cursor: 'pointer',
-                    fontFamily: 'Orbitron, sans-serif',
-                    fontSize: '0.8rem',
-                    color: 'var(--text)',
-                    textAlign: 'left'
-                  }}
-                >
-                  <span>🤖 AI Co-pilot</span>
-                  <span>{expandedSection === 'ai-copilot' ? '▼' : '▶'}</span>
-                </button>
-                {expandedSection === 'ai-copilot' && (
-                  <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px', borderTop: '1px solid var(--border)' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      <span style={{ fontSize: '0.8rem', color: 'var(--muted)', fontWeight: 'bold' }}>Generate Form with AI</span>
-                      <textarea
-                        placeholder="Describe the form you want to generate..."
-                        value={aiPromptInput}
-                        onChange={(e) => setAiPromptInput(e.target.value)}
-                        style={{ fontSize: '0.8rem', padding: '6px', minHeight: '60px', borderRadius: '4px', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--border)', color: 'var(--text)' }}
-                      />
-                      <button
-                        type="button"
-                        className="submit-button"
-                        onClick={handleAIFormGeneration}
-                        disabled={aiGenerating}
-                        style={{ padding: '6px', fontSize: '0.75rem', marginTop: '4px', cursor: 'pointer' }}
-                      >
-                        {aiGenerating ? 'Generating...' : '⚡ Generate Form'}
-                      </button>
-                    </div>
-
-                    <div style={{ height: '1px', background: 'var(--border)', margin: '4px 0' }} />
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      <span style={{ fontSize: '0.8rem', color: 'var(--muted)', fontWeight: 'bold' }}>Refine Question with AI</span>
-                      
-                      <label style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                        <span style={{ fontSize: '0.7rem', color: 'var(--muted)' }}>Select Question</span>
-                        <select
-                          value={aiSelectedQuestion}
-                          onChange={(e) => setAiSelectedQuestion(e.target.value)}
-                          style={{ fontSize: '0.8rem', padding: '4px', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
-                        >
-                          <option value="">-- Choose question --</option>
-                          {questions.map((q) => (
-                            <option key={q.id} value={q.id}>{q.title || 'Untitled question'}</option>
-                          ))}
-                        </select>
-                      </label>
-
-                      <label style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                        <span style={{ fontSize: '0.7rem', color: 'var(--muted)' }}>AI Action</span>
-                        <select
-                          value={aiAction}
-                          onChange={(e) => setAiAction(e.target.value)}
-                          style={{ fontSize: '0.8rem', padding: '4px', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
-                        >
-                          <option value="rewrite">Rewrite</option>
-                          <option value="make_professional">Make Professional</option>
-                          <option value="make_friendly">Make Friendly</option>
-                          <option value="translate_fr">Translate to French</option>
-                          <option value="translate_es">Translate to Spanish</option>
-                          <option value="generate_options">Generate Options (MCQ)</option>
-                        </select>
-                      </label>
-
-                      <label style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                        <span style={{ fontSize: '0.7rem', color: 'var(--muted)' }}>Extra Context (Optional)</span>
-                        <input
-                          type="text"
-                          placeholder="e.g. translate to French, add 3 options"
-                          value={aiActionContext}
-                          onChange={(e) => setAiActionContext(e.target.value)}
-                          style={{ fontSize: '0.8rem', padding: '4px', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--border)', color: 'var(--text)' }}
-                        />
-                      </label>
-
-                      <button
-                        type="button"
-                        className="submit-button"
-                        onClick={handleAIQuestionAction}
-                        disabled={aiActionRunning || !aiSelectedQuestion}
-                        style={{ padding: '6px', fontSize: '0.75rem', marginTop: '4px', cursor: 'pointer' }}
-                      >
-                        {aiActionRunning ? 'Refining...' : '🔮 Refine Question'}
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Logic Rules Accordion */}
-              <div className="settings-accordion-item" style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }}>
-                <button
-                  type="button"
-                  onClick={() => setExpandedSection(expandedSection === 'logic' ? null : 'logic')}
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    background: 'rgba(255,255,255,0.02)',
-                    border: 'none',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    cursor: 'pointer',
-                    fontFamily: 'Orbitron, sans-serif',
-                    fontSize: '0.8rem',
-                    color: 'var(--text)',
-                    textAlign: 'left'
-                  }}
-                >
-                  <span>⚡ Logic Rules</span>
-                  <span>{expandedSection === 'logic' ? '▼' : '▶'}</span>
-                </button>
-                {expandedSection === 'logic' && (
-                  <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px', borderTop: '1px solid var(--border)' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>Define conditional routing/actions for your form questions.</span>
-                      
-                      {logicRules.length === 0 ? (
-                        <span style={{ fontSize: '0.75rem', color: 'var(--muted)', fontStyle: 'italic', textAlign: 'center', margin: '10px 0' }}>No logic rules set.</span>
-                      ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '200px', overflowY: 'auto', paddingRight: '4px' }}>
-                          {logicRules.map((rule, idx) => (
-                            <div key={rule.id || idx} style={{ padding: '8px', border: '1px solid var(--border)', borderRadius: '6px', background: 'rgba(0,0,0,0.15)', position: 'relative' }}>
-                              <button
-                                type="button"
-                                onClick={() => setLogicRules(prev => prev.filter(r => r.id !== rule.id))}
-                                style={{ position: 'absolute', top: '4px', right: '4px', border: 'none', background: 'transparent', color: '#ff4444', fontSize: '0.9rem', cursor: 'pointer' }}
-                              >
-                                ×
-                              </button>
-                              <div style={{ fontSize: '0.75rem', display: 'flex', flexDirection: 'column', gap: '4px', color: 'var(--text)' }}>
-                                <div>
-                                  <strong>IF</strong>{' '}
-                                  <select
-                                    value={rule.sourceQuestionId}
-                                    onChange={(e) => setLogicRules(prev => prev.map(r => r.id === rule.id ? { ...r, sourceQuestionId: e.target.value } : r))}
-                                    style={{ fontSize: '0.7rem', padding: '2px', background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)', maxWidth: '120px' }}
-                                  >
-                                    <option value="">Select question</option>
-                                    {questions.map(q => <option key={q.id} value={q.id}>{q.title || 'Untitled'}</option>)}
-                                  </select>
-                                </div>
-                                <div>
-                                  <strong>CONDITION</strong>{' '}
-                                  <select
-                                    value={rule.condition}
-                                    onChange={(e) => setLogicRules(prev => prev.map(r => r.id === rule.id ? { ...r, condition: e.target.value } : r))}
-                                    style={{ fontSize: '0.7rem', padding: '2px', background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)' }}
-                                  >
-                                    <option value="equals">Equals</option>
-                                    <option value="contains">Contains</option>
-                                  </select>
-                                </div>
-                                <div>
-                                  <strong>VALUE</strong>{' '}
-                                  <input
-                                    type="text"
-                                    value={rule.value}
-                                    onChange={(e) => setLogicRules(prev => prev.map(r => r.id === rule.id ? { ...r, value: e.target.value } : r))}
-                                    style={{ fontSize: '0.7rem', padding: '2px', background: 'rgba(0,0,0,0.2)', color: 'var(--text)', border: '1px solid var(--border)', width: '80px' }}
-                                  />
-                                </div>
-                                <div>
-                                  <strong>THEN</strong>{' '}
-                                  <select
-                                    value={rule.action}
-                                    onChange={(e) => setLogicRules(prev => prev.map(r => r.id === rule.id ? { ...r, action: e.target.value } : r))}
-                                    style={{ fontSize: '0.7rem', padding: '2px', background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)' }}
-                                  >
-                                    <option value="show">SHOW</option>
-                                    <option value="hide">HIDE</option>
-                                    <option value="require">REQUIRE</option>
-                                  </select>{' '}
-                                  <select
-                                    value={rule.targetQuestionId}
-                                    onChange={(e) => setLogicRules(prev => prev.map(r => r.id === rule.id ? { ...r, targetQuestionId: e.target.value } : r))}
-                                    style={{ fontSize: '0.7rem', padding: '2px', background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)', maxWidth: '100px' }}
-                                  >
-                                    <option value="">Select question</option>
-                                    {questions.map(q => <option key={q.id} value={q.id}>{q.title || 'Untitled'}</option>)}
-                                  </select>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      <button
-                        type="button"
-                        className="submit-button"
-                        onClick={() => setLogicRules(prev => [...prev, { id: `rule-${crypto.randomUUID()}`, sourceQuestionId: questions[0]?.id || '', condition: 'equals', value: '', action: 'show', targetQuestionId: questions[0]?.id || '' }])}
-                        style={{ padding: '6px', fontSize: '0.75rem', marginTop: '4px', cursor: 'pointer' }}
-                      >
-                        + Add Rule
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Sharing & QR Accordion */}
-              <div className="settings-accordion-item" style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }}>
-                <button
-                  type="button"
-                  onClick={() => setExpandedSection(expandedSection === 'sharing' ? null : 'sharing')}
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    background: 'rgba(255,255,255,0.02)',
-                    border: 'none',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    cursor: 'pointer',
-                    fontFamily: 'Orbitron, sans-serif',
-                    fontSize: '0.8rem',
-                    color: 'var(--text)',
-                    textAlign: 'left'
-                  }}
-                >
-                  <span>🔗 Sharing & QR</span>
-                  <span>{expandedSection === 'sharing' ? '▼' : '▶'}</span>
-                </button>
-                {expandedSection === 'sharing' && (
-                  <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px', borderTop: '1px solid var(--border)' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--muted)', fontWeight: 'bold' }}>Public Link</span>
-                      <div style={{ display: 'flex', gap: '4px' }}>
-                        <input
-                          type="text"
-                          readOnly
-                          value={typeof window !== 'undefined' ? `${window.location.origin}/form?id=${formId}` : ''}
-                          style={{ flex: 1, fontSize: '0.75rem', padding: '4px', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: '4px' }}
-                          onClick={(e) => (e.target as HTMLInputElement).select()}
-                        />
-                        <button
-                          type="button"
-                          className="submit-button"
-                          style={{ padding: '2px 8px', fontSize: '0.7rem' }}
-                          onClick={() => {
-                            if (typeof window !== 'undefined') {
-                              navigator.clipboard.writeText(`${window.location.origin}/form?id=${formId}`);
-                              setShareCopied(true);
-                              setTimeout(() => setShareCopied(false), 2000);
-                            }
-                          }}
-                        >
-                          {sharecopied ? 'Copied' : 'Copy'}
-                        </button>
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--muted)', fontWeight: 'bold' }}>Short Code Sharing</span>
-                      <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                        <span style={{ fontSize: '0.8rem', fontFamily: 'monospace', color: 'var(--accent)', fontWeight: 'bold' }}>
-                          {sharingSettings.shortCode}
-                        </span>
-                        <button
-                          type="button"
-                          className="submit-button"
-                          style={{ padding: '2px 6px', fontSize: '0.65rem' }}
-                          onClick={() => setSharingSettings(prev => ({ ...prev, shortCode: Math.random().toString(36).substring(2, 8) }))}
-                        >
-                          Regenerate
-                        </button>
-                      </div>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px', cursor: 'pointer' }}>
-                        <input
-                          type="checkbox"
-                          checked={sharingSettings.isOneTimeLink}
-                          onChange={(e) => setSharingSettings(prev => ({ ...prev, isOneTimeLink: e.target.checked }))}
-                        />
-                        <span style={{ fontSize: '0.7rem', color: 'var(--muted)' }}>One-time link (expires after submit)</span>
-                      </label>
-                    </div>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'center', marginTop: '4px' }}>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--muted)', fontWeight: 'bold', alignSelf: 'flex-start' }}>Access QR Code</span>
-                      <div style={{ background: 'white', padding: '6px', borderRadius: '8px', display: 'flex', justifyContent: 'center', alignItems: 'center', border: '2px solid var(--accent)' }}>
-                        <img
-                          src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(typeof window !== 'undefined' ? `${window.location.origin}/form?id=${formId}` : '')}`}
-                          alt="Form QR Code"
-                          style={{ width: '100px', height: '100px' }}
-                        />
-                      </div>
-                      <span style={{ fontSize: '0.65rem', color: 'var(--muted)', marginTop: '2px' }}>Scan to fill out form</span>
-                    </div>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--muted)', fontWeight: 'bold' }}>Embed Code</span>
-                      <textarea
-                        readOnly
-                        value={`<iframe src="${typeof window !== 'undefined' ? `${window.location.origin}/form?id=${formId}` : ''}" width="100%" height="600px" frameborder="0"></iframe>`}
-                        style={{ fontSize: '0.7rem', padding: '4px', height: '45px', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--border)', color: 'var(--text)', resize: 'none', borderRadius: '4px' }}
-                        onClick={(e) => (e.target as HTMLTextAreaElement).select()}
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Templates Accordion */}
-              <div className="settings-accordion-item" style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }}>
-                <button
-                  type="button"
-                  onClick={() => setExpandedSection(expandedSection === 'templates' ? null : 'templates')}
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    background: 'rgba(255,255,255,0.02)',
-                    border: 'none',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    cursor: 'pointer',
-                    fontFamily: 'Orbitron, sans-serif',
-                    fontSize: '0.8rem',
-                    color: 'var(--text)',
-                    textAlign: 'left'
-                  }}
-                >
-                  <span>📋 Templates Gallery</span>
-                  <span>{expandedSection === 'templates' ? '▼' : '▶'}</span>
-                </button>
-                {expandedSection === 'templates' && (
-                  <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px', borderTop: '1px solid var(--border)' }}>
-                    <input
-                      type="text"
-                      placeholder="Search templates..."
-                      value={templateSearch}
-                      onChange={(e) => setTemplateSearch(e.target.value)}
-                      style={{ fontSize: '0.75rem', padding: '4px 6px', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: '4px' }}
-                    />
-                    
-                    <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                      {['all', 'hackathons', 'feedback', 'education', 'healthcare'].map(cat => (
-                        <button
-                          key={cat}
-                          type="button"
-                          onClick={() => setTemplateCategory(cat)}
-                          style={{
-                            padding: '2px 6px',
-                            fontSize: '0.65rem',
-                            borderRadius: '3px',
-                            border: '1px solid var(--border)',
-                            background: templateCategory === cat ? 'var(--accent)' : 'rgba(255,255,255,0.05)',
-                            color: templateCategory === cat ? '#000' : 'var(--text)',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          {cat}
-                        </button>
-                      ))}
-                    </div>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '200px', overflowY: 'auto', marginTop: '4px' }}>
-                      {filteredTemplates.map(tpl => (
-                        <div
-                          key={tpl.id}
-                          style={{
-                            padding: '8px',
-                            border: '1px solid var(--border)',
-                            borderRadius: '6px',
-                            background: 'rgba(255,255,255,0.02)',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '4px'
-                          }}
-                        >
-                          <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--text)' }}>{tpl.title}</span>
-                          <span style={{ fontSize: '0.7rem', color: 'var(--muted)' }}>{tpl.description}</span>
-                          <button
-                            type="button"
-                            className="submit-button"
-                            onClick={() => loadTemplateIntoBuilder(tpl)}
-                            style={{ padding: '2px 8px', fontSize: '0.7rem', alignSelf: 'flex-start', cursor: 'pointer', marginTop: '2px' }}
-                          >
-                            Load Template
-                          </button>
-                        </div>
-                      ))}
-                      {filteredTemplates.length === 0 && (
-                        <span style={{ fontSize: '0.75rem', color: 'var(--muted)', textAlign: 'center', fontStyle: 'italic' }}>No templates found.</span>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
             </div>
           </div>
         </aside>

@@ -44,6 +44,14 @@ public class Submission {
   @Column(columnDefinition = "TEXT")
   private String message;
 
+  private String browser;
+  private String os;
+  private String deviceType;
+  private String country;
+  private String city;
+  private String referer;
+  private Integer completionTimeSeconds;
+
   private Instant createdAt;
 
   public Long getId() {
@@ -164,6 +172,62 @@ public class Submission {
 
   public void setMessage(String message) {
     this.message = message;
+  }
+
+  public String getBrowser() {
+    return browser;
+  }
+
+  public void setBrowser(String browser) {
+    this.browser = browser;
+  }
+
+  public String getOs() {
+    return os;
+  }
+
+  public void setOs(String os) {
+    this.os = os;
+  }
+
+  public String getDeviceType() {
+    return deviceType;
+  }
+
+  public void setDeviceType(String deviceType) {
+    this.deviceType = deviceType;
+  }
+
+  public String getCountry() {
+    return country;
+  }
+
+  public void setCountry(String country) {
+    this.country = country;
+  }
+
+  public String getCity() {
+    return city;
+  }
+
+  public void setCity(String city) {
+    this.city = city;
+  }
+
+  public String getReferer() {
+    return referer;
+  }
+
+  public void setReferer(String referer) {
+    this.referer = referer;
+  }
+
+  public Integer getCompletionTimeSeconds() {
+    return completionTimeSeconds;
+  }
+
+  public void setCompletionTimeSeconds(Integer completionTimeSeconds) {
+    this.completionTimeSeconds = completionTimeSeconds;
   }
 
   public Instant getCreatedAt() {

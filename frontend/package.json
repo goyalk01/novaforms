@@ -10,11 +10,17 @@
   },
   "dependencies": {
     "@clerk/nextjs": "^7.5.8",
+    "canvas-confetti": "^1.9.4",
+    "framer-motion": "^12.42.0",
+    "lucide-react": "^1.21.0",
     "next": "15.3.3",
     "react": "19.0.0",
-    "react-dom": "19.0.0"
+    "react-dom": "19.0.0",
+    "react-is": "^19.2.7",
+    "recharts": "^3.9.0"
   },
   "devDependencies": {
+    "@types/canvas-confetti": "^1.9.0",
     "@types/node": "^22.15.21",
     "@types/react": "^19.1.7",
     "@types/react-dom": "^19.1.7",

@@ -5,7 +5,9 @@ build
 target
 .env
 .env.local
+.env.production
 frontend/.env.local
+frontend/.env.production
 backend/.env
 *.log
 
@@ -22,15 +24,14 @@ backend/.env
 # Temporary / OS files
 .DS_Store
 Thumbs.db
-
-# AI Agent Instruction files and generated directories
-AGENT.md
-agent.md
-CLAUDE.md
-.gemini/
-.gemini_worktree/
 *.webp
 *.mp4
 *.gif
 *.png
 
+AI temporary files
+cache folders
+generated artifacts
+OS files
+editor metadata
+SCRATCHPAD.md

@@ -1,7 +1,8 @@
 'use client';
 
-import { FormEvent, useEffect, useState, useRef, Suspense } from 'react';
+import { FormEvent, useEffect, useState, useRef, Suspense, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
+import confetti from 'canvas-confetti';
 
 type QuestionType = 
   | 'short-answer'
@@ -365,7 +366,8 @@ function FileUpload({
         body: formData
       });
       if (res.ok) {
-        const data = await res.json();
+        const resData = await res.json();
+        const data = resData.data !== undefined ? resData.data : resData;
         if (data.url) {
           if (multipleFiles) {
             onChange([...filesList, data.url]);
@@ -374,8 +376,9 @@ function FileUpload({
           }
         }
       } else {
-        const err = await res.json().catch(() => ({}));
-        alert(err.error || "File upload failed");
+        const resJson = await res.json().catch(() => ({}));
+        const err = resJson.data !== undefined ? resJson.data : resJson;
+        alert(resJson.message || "File upload failed");
       }
     } catch {
       alert("Network error uploading file");
@@ -436,6 +439,166 @@ function FileUpload({
   );
 }
 
+const parseClientUserAgent = (ua: string) => {
+  if (!ua) return { browser: 'Unknown Browser', os: 'Unknown OS', deviceType: 'Desktop' };
+  const lower = ua.toLowerCase();
+  let browser = 'Unknown Browser';
+  if (lower.includes('edg')) browser = 'Edge';
+  else if (lower.includes('chrome') && !lower.includes('chromium')) browser = 'Chrome';
+  else if (lower.includes('safari') && !lower.includes('chrome')) browser = 'Safari';
+  else if (lower.includes('firefox')) browser = 'Firefox';
+  else if (lower.includes('opera') || lower.includes('opr')) browser = 'Opera';
+
+  let os = 'Unknown OS';
+  if (lower.includes('windows')) os = 'Windows';
+  else if (lower.includes('macintosh') || lower.includes('mac os')) os = 'macOS';
+  else if (lower.includes('android')) os = 'Android';
+  else if (lower.includes('iphone') || lower.includes('ipad')) os = 'iOS';
+  else if (lower.includes('linux')) os = 'Linux';
+
+  let deviceType = 'Desktop';
+  if (lower.includes('ipad') || (lower.includes('android') && !lower.includes('mobile'))) deviceType = 'Tablet';
+  else if (lower.includes('mobile') || lower.includes('iphone') || lower.includes('android')) deviceType = 'Mobile';
+
+  return { browser, os, deviceType };
+};
+
+const evaluateCondition = (ans: AnswerValue | undefined, operator: string, target: string): boolean => {
+  const hasAns = ans !== undefined && ans !== null && ans !== '';
+  if (!hasAns) {
+    return operator === 'is_empty';
+  }
+
+  const strAns = (typeof ans === 'string' ? ans : Array.isArray(ans) ? ans.join(',') : '').toLowerCase().trim();
+  const strTarget = (target || '').toLowerCase().trim();
+
+  switch (operator) {
+    case 'equals':
+      return strAns === strTarget;
+    case 'not_equals':
+      return strAns !== strTarget;
+    case 'contains':
+      return strAns.includes(strTarget);
+    case 'not_contains':
+      return !strAns.includes(strTarget);
+    case 'starts_with':
+      return strAns.startsWith(strTarget);
+    case 'ends_with':
+      return strAns.endsWith(strTarget);
+    case 'greater_than':
+      return Number(strAns) > Number(strTarget);
+    case 'less_than':
+      return Number(strAns) < Number(strTarget);
+    case 'is_empty':
+      return false;
+    case 'is_not_empty':
+      return true;
+    default:
+      return false;
+  }
+};
+
+const evaluateLogicRules = (
+  questions: Question[],
+  answers: Record<string, AnswerValue>,
+  rules: any[]
+) => {
+  const hidden = new Set<string>();
+  const required = new Set<string>();
+  let jumpPage: number | null = null;
+
+  // Initialize requirements from default schemas
+  questions.forEach(q => {
+    if (q.required) {
+      required.add(q.id);
+    }
+  });
+
+  if (!rules || rules.length === 0) {
+    return { hiddenQuestions: hidden, requiredQuestions: required, forcedJumpPage: jumpPage };
+  }
+
+  // Normalize flat rules to nested structure if needed
+  const normalizedRules = rules.map(rule => {
+    if (rule && rule.sourceQuestionId) {
+      return {
+        isEnabled: true,
+        priority: 0,
+        conditionsOperator: 'AND',
+        conditions: [
+          {
+            fieldId: rule.sourceQuestionId,
+            operator: rule.condition || 'equals',
+            value: rule.value
+          }
+        ],
+        actions: [
+          {
+            type: rule.action === 'show' ? 'show_question' : rule.action === 'hide' ? 'hide_question' : rule.action === 'require' ? 'require_question' : 'optional_question',
+            targetId: rule.targetQuestionId
+          }
+        ]
+      };
+    }
+    return rule;
+  });
+
+  // If a question is the target of a "show_question" rule, it should default to hidden
+  normalizedRules.forEach(rule => {
+    if (rule && rule.isEnabled) {
+      rule.actions?.forEach((act: any) => {
+        if (act.type === 'show_question') {
+          hidden.add(act.targetId);
+        }
+      });
+    }
+  });
+
+  const sortedRules = [...normalizedRules].sort((a, b) => (a.priority || 0) - (b.priority || 0));
+
+  for (const rule of sortedRules) {
+    if (!rule.isEnabled) continue;
+
+    const op = rule.conditionsOperator || 'AND';
+    let match = op === 'AND';
+
+    for (const cond of rule.conditions) {
+      const qId = cond.fieldId;
+      const ansVal = answers[qId];
+      const targetVal = cond.value;
+
+      const condMatch = evaluateCondition(ansVal, cond.operator, targetVal);
+      if (op === 'AND') {
+        match = match && condMatch;
+      } else {
+        match = match || condMatch;
+      }
+    }
+
+    if (match) {
+      for (const act of rule.actions) {
+        const targetId = act.targetId;
+        if (act.type === 'hide_question') {
+          hidden.add(targetId);
+        } else if (act.type === 'show_question') {
+          hidden.delete(targetId);
+        } else if (act.type === 'require_question') {
+          required.add(targetId);
+        } else if (act.type === 'optional_question') {
+          required.delete(targetId);
+        } else if (act.type === 'jump_to_section' || act.type === 'skip_logic') {
+          const page = parseInt(act.details || targetId, 10);
+          if (!isNaN(page)) {
+            jumpPage = page;
+          }
+        }
+      }
+    }
+  }
+
+  return { hiddenQuestions: hidden, requiredQuestions: required, forcedJumpPage: jumpPage };
+};
+
 function FormIntakeComponent() {
   const searchParams = useSearchParams();
   const formId = searchParams.get('id') ?? '1';
@@ -453,9 +616,16 @@ function FormIntakeComponent() {
     videoUrl?: string;
     questions: Question[];
     settings: SubmissionSettings;
+    logicRules: any[];
     accessMode?: string;
     openAt?: string;
+    statusPagesJson?: string;
   } | null>(null);
+
+  const [loadStartTime] = useState(() => Date.now());
+  const [geoData, setGeoData] = useState({ country: 'Unknown', city: 'Unknown' });
+  const [uaData, setUaData] = useState({ browser: 'Unknown', os: 'Unknown', deviceType: 'Desktop' });
+  const viewRecorded = useRef(false);
 
   const [dynamicStatus, setDynamicStatus] = useState<string>('LOADING');
   const [accessMode, setAccessMode] = useState<string>('PUBLIC');
@@ -479,118 +649,205 @@ function FormIntakeComponent() {
   const [isEditing, setIsEditing] = useState(false);
   const [editingSubmissionId, setEditingSubmissionId] = useState<string | null>(null);
 
+  const { hiddenQuestions, requiredQuestions, forcedJumpPage } = useMemo(() => {
+    if (!formConfig) return { hiddenQuestions: new Set<string>(), requiredQuestions: new Set<string>(), forcedJumpPage: null };
+    return evaluateLogicRules(formConfig.questions, answers, (formConfig as any).logicRules || []);
+  }, [formConfig, answers]);
+
   useEffect(() => {
-    const loadFormConfig = async () => {
-      let loadedConfig: any = null;
-
-      try {
-        const response = await fetch(`${API_BASE}/api/form-config/${formId}`, { cache: 'no-store' });
-        if (response.ok) {
-          const data = await response.json();
-          const conf = data.config;
-          if (conf) {
-            setDynamicStatus(data.dynamicStatus || 'OPEN');
-            setAccessMode(conf.accessMode || 'PUBLIC');
-            setOpenAt(conf.openAt || '');
-            setCloseAt(conf.closeAt || '');
-            setTimezone(conf.timezone || 'UTC');
-
-            let questions = [];
-            try {
-              questions = JSON.parse(conf.questionsJson || '[]');
-            } catch (err) {
-              console.error("Failed to parse questionsJson:", err);
-            }
-            let parsedSettings = defaultSettings;
-            if (conf.settingsJson) {
-              try {
-                parsedSettings = { ...defaultSettings, ...JSON.parse(conf.settingsJson) };
-              } catch (e) {
-                console.error("Failed to parse settingsJson", e);
-              }
-            }
-            loadedConfig = {
-              title: conf.title || 'Orbit Intake',
-              description: conf.description || '',
-              workspaceName: conf.name || 'Nova Studio',
-              theme: conf.themeMode || 'silver',
-              density: conf.layoutDensity || 'comfortable',
-              submissionMode: conf.submissionMode || 'standard',
-              totalPages: conf.totalPages || 1,
-              bannerUrl: conf.bannerUrl || '',
-              videoUrl: conf.videoUrl || '',
-              questions,
-              settings: parsedSettings,
-              accessMode: conf.accessMode || 'PUBLIC',
-              openAt: conf.openAt || ''
-            };
-          }
-        }
-      } catch (err) {
-        console.error("Failed to fetch form config from API", err);
-      }
-
-
-      if (!loadedConfig) {
-        // Fallback defaults
-        const defaultQuestions: Question[] = [
-          { id: 'q-name', title: 'Full name', helpText: 'Required', type: 'short-answer', required: true, options: [], scaleMax: 5, fieldKey: 'fullName' },
-          { id: 'q-email', title: 'Email address', helpText: 'Required', type: 'email', required: true, options: [], scaleMax: 5, fieldKey: 'email' },
-          { id: 'q-msg', title: 'Additional feedback', helpText: 'Optional', type: 'paragraph', required: false, options: [], scaleMax: 5 }
-        ];
-        loadedConfig = {
-          title: 'Form Submission Intake',
-          description: 'Please fill out this dynamic form response.',
-          workspaceName: 'Nova Forms',
-          theme: 'silver',
-          density: 'comfortable',
-          submissionMode: 'standard',
-          questions: defaultQuestions,
-          settings: defaultSettings,
-          accessMode: 'PUBLIC',
-          openAt: ''
-        };
-        setDynamicStatus('OPEN');
-      }
-
-      setFormConfig(loadedConfig);
-      initAnswers(loadedConfig.questions);
-      applyThemeStyles(loadedConfig.theme, loadedConfig.density);
-
-      // Fetch response count to enforce constraints
-      try {
-        const submissionsRes = await fetch(`${API_BASE}/api/submissions?formId=${formId}`, { cache: 'no-store' });
-        if (submissionsRes.ok) {
-          const submissionsData = await submissionsRes.json();
-          setResponseCount(submissionsData.length);
-        }
-      } catch (err) {
-        console.error("Failed to fetch submission count", err);
-      }
-
-      // Check edit mode
-      if (submissionId && loadedConfig.settings.allowEdit) {
+    if (formConfig && !viewRecorded.current) {
+      viewRecorded.current = true;
+      const recordView = async () => {
         try {
-          const subRes = await fetch(`${API_BASE}/api/submissions/${submissionId}`);
-          if (subRes.ok) {
-            const subData = await subRes.json();
-            if (subData.answersJson) {
-              try {
-                const parsedAnswers = JSON.parse(subData.answersJson);
-                setAnswers((prev) => ({ ...prev, ...parsedAnswers }));
-                setIsEditing(true);
-                setEditingSubmissionId(submissionId);
-              } catch (e) {
-                console.error("Failed to parse answersJson from edit target", e);
-              }
+          await fetch(`${API_BASE}/api/form-config/${formId}/view`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'Server',
+              browser: uaData.browser,
+              os: uaData.os,
+              deviceType: uaData.deviceType,
+              country: geoData.country,
+              city: geoData.city,
+              referer: typeof document !== 'undefined' ? (document.referrer || 'Direct') : 'Direct'
+            })
+          });
+        } catch (err) {
+          console.error("Failed to record form view", err);
+        }
+      };
+      void recordView();
+    }
+  }, [formConfig, uaData, geoData, formId]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const parsedUa = parseClientUserAgent(navigator.userAgent);
+      setUaData(parsedUa);
+
+      const fetchGeo = async () => {
+        try {
+          const res = await fetch('https://ipapi.co/json/').catch(() => null);
+          if (res && res.ok) {
+            const data = await res.json();
+            if (data && data.country_name) {
+              setGeoData({
+                country: data.country_name || 'Unknown',
+                city: data.city || 'Unknown'
+              });
             }
           }
-        } catch (err) {
-          console.error("Failed to load submission for editing", err);
+        } catch (e) {
+          console.warn("Geo IP fetch failed, using defaults", e);
+        }
+      };
+      void fetchGeo();
+    }
+  }, []);
+
+  const loadFormConfig = async () => {
+    let loadedConfig: any = null;
+
+    try {
+      const savedToken = typeof window !== 'undefined' ? sessionStorage.getItem(`novaforms-session-token-${formId}`) : null;
+      const headers: Record<string, string> = {};
+      if (savedToken) {
+        headers['X-Form-Token'] = savedToken;
+      }
+      const response = await fetch(`${API_BASE}/api/form-config/${formId}`, {
+        cache: 'no-store',
+        headers
+      });
+      if (response.ok) {
+        const resData = await response.json();
+        const data = resData.data !== undefined ? resData.data : resData;
+        const conf = data.config;
+        if (conf) {
+          setDynamicStatus(data.dynamicStatus || 'OPEN');
+          setAccessMode(conf.accessMode || 'PUBLIC');
+          setOpenAt(conf.openAt || '');
+          setCloseAt(conf.closeAt || '');
+          setTimezone(conf.timezone || 'UTC');
+
+          if (conf.accessMode === 'PASSWORD_PROTECTED') {
+            if (conf.questionsJson && conf.questionsJson !== '[]') {
+              setPasswordVerified(true);
+            } else {
+              setPasswordVerified(false);
+            }
+          }
+
+          let questions = [];
+          try {
+            questions = JSON.parse(conf.questionsJson || '[]');
+          } catch (err) {
+            console.error("Failed to parse questionsJson:", err);
+          }
+          let parsedSettings = defaultSettings;
+          if (conf.settingsJson) {
+            try {
+              parsedSettings = { ...defaultSettings, ...JSON.parse(conf.settingsJson) };
+            } catch (e) {
+              console.error("Failed to parse settingsJson", e);
+            }
+          }
+          let logicRules = [];
+          if (conf.logicJson) {
+            try {
+              logicRules = JSON.parse(conf.logicJson);
+            } catch (e) {
+              console.error("Failed to parse logicJson", e);
+            }
+          }
+          loadedConfig = {
+            title: conf.title || 'Orbit Intake',
+            description: conf.description || '',
+            workspaceName: conf.name || 'Nova Studio',
+            theme: conf.themeMode || 'silver',
+            density: conf.layoutDensity || 'comfortable',
+            submissionMode: conf.submissionMode || 'standard',
+            totalPages: conf.totalPages || 1,
+            bannerUrl: conf.bannerUrl || '',
+            videoUrl: conf.videoUrl || '',
+            questions,
+            settings: parsedSettings,
+            logicRules,
+            accessMode: conf.accessMode || 'PUBLIC',
+            openAt: conf.openAt || '',
+            statusPagesJson: conf.statusPagesJson,
+            themeJson: conf.themeJson
+          };
         }
       }
-    };
+    } catch (err) {
+      console.error("Failed to fetch form config from API", err);
+    }
 
+
+    if (!loadedConfig) {
+      // Fallback defaults
+      const defaultQuestions: Question[] = [
+        { id: 'q-name', title: 'Full name', helpText: 'Required', type: 'short-answer', required: true, options: [], scaleMax: 5, fieldKey: 'fullName' },
+        { id: 'q-email', title: 'Email address', helpText: 'Required', type: 'email', required: true, options: [], scaleMax: 5, fieldKey: 'email' },
+        { id: 'q-msg', title: 'Additional feedback', helpText: 'Optional', type: 'paragraph', required: false, options: [], scaleMax: 5 }
+      ];
+      loadedConfig = {
+        title: 'Form Submission Intake',
+        description: 'Please fill out this dynamic form response.',
+        workspaceName: 'Nova Forms',
+        theme: 'silver',
+        density: 'comfortable',
+        submissionMode: 'standard',
+        questions: defaultQuestions,
+        settings: defaultSettings,
+        logicRules: [],
+        accessMode: 'PUBLIC',
+        openAt: ''
+      };
+      setDynamicStatus('OPEN');
+    }
+
+    setFormConfig(loadedConfig);
+    initAnswers(loadedConfig.questions);
+    applyThemeStyles(loadedConfig.theme, loadedConfig.density, (loadedConfig as any).themeJson);
+
+    // Fetch response count to enforce constraints
+    try {
+      const submissionsRes = await fetch(`${API_BASE}/api/submissions?formId=${formId}`, { cache: 'no-store' });
+      if (submissionsRes.ok) {
+        const resData = await submissionsRes.json();
+        const submissionsData = resData.data !== undefined ? resData.data : resData;
+        setResponseCount(submissionsData.length);
+      }
+    } catch (err) {
+      console.error("Failed to fetch submission count", err);
+    }
+
+    // Check edit mode
+    if (submissionId && loadedConfig.settings.allowEdit) {
+      try {
+        const subRes = await fetch(`${API_BASE}/api/submissions/${submissionId}`);
+        if (subRes.ok) {
+          const resData = await subRes.json();
+          const subData = resData.data !== undefined ? resData.data : resData;
+          if (subData.answersJson) {
+            try {
+              const parsedAnswers = JSON.parse(subData.answersJson);
+              setAnswers((prev) => ({ ...prev, ...parsedAnswers }));
+              setIsEditing(true);
+              setEditingSubmissionId(submissionId);
+            } catch (e) {
+              console.error("Failed to parse answersJson from edit target", e);
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load submission for editing", err);
+      }
+    }
+  };
+
+  useEffect(() => {
     void loadFormConfig();
   }, [formId, submissionId]);
 
@@ -631,43 +888,17 @@ function FormIntakeComponent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password })
       });
+      const resData = await res.json();
+      const data = resData.data !== undefined ? resData.data : resData;
       if (res.ok) {
-        const data = await res.json();
-        const conf = data.config;
-        if (conf) {
-          let questions = [];
-          try {
-            questions = JSON.parse(conf.questionsJson || '[]');
-          } catch (err) {
-            console.error("Failed to parse questionsJson:", err);
-          }
-          let parsedSettings = defaultSettings;
-          if (conf.settingsJson) {
-            try {
-              parsedSettings = { ...defaultSettings, ...JSON.parse(conf.settingsJson) };
-            } catch (e) {
-              console.error("Failed to parse settingsJson", e);
-            }
-          }
-          setFormConfig({
-            title: conf.title || 'Orbit Intake',
-            description: conf.description || '',
-            workspaceName: conf.name || 'Nova Studio',
-            theme: conf.themeMode || 'silver',
-            density: conf.layoutDensity || 'comfortable',
-            submissionMode: conf.submissionMode || 'standard',
-            totalPages: conf.totalPages || 1,
-            bannerUrl: conf.bannerUrl || '',
-            videoUrl: conf.videoUrl || '',
-            questions,
-            settings: parsedSettings
-          });
-          initAnswers(questions);
-          setPasswordVerified(true);
+        if (data.token) {
+          sessionStorage.setItem(`novaforms-session-token-${formId}`, data.token);
         }
+        setPasswordVerified(true);
+        setPasswordError('');
+        await loadFormConfig();
       } else {
-        const err = await res.json().catch(() => ({}));
-        setPasswordError(err.message || 'Incorrect password. Access denied.');
+        setPasswordError(resData.message || 'Incorrect password. Access denied.');
       }
     } catch {
       setPasswordError('Error verifying password. Backend might be offline.');
@@ -706,15 +937,32 @@ function FormIntakeComponent() {
     setAnswers(initial);
   };
 
-  const applyThemeStyles = (theme: string, density: string) => {
+  const applyThemeStyles = (theme: string, density: string, themeJsonStr?: string) => {
     document.documentElement.dataset.theme = theme;
     document.documentElement.dataset.density = density;
     
-    // Load Customizations from localStorage if any
-    const accent = localStorage.getItem('novaforms-accent') ?? 'default';
-    const radius = localStorage.getItem('novaforms-radius') ?? '16px';
-    const grid = localStorage.getItem('novaforms-grid') ?? '0.03';
-    const enableBlur = localStorage.getItem('novaforms-enable-blur') === 'true';
+    // Load Customizations from themeJsonStr or fallback to localStorage
+    let accent = 'default';
+    let radius = '16px';
+    let grid = '0.03';
+    let enableBlur = false;
+
+    if (themeJsonStr) {
+      try {
+        const themeObj = JSON.parse(themeJsonStr);
+        if (themeObj.accentColor) accent = themeObj.accentColor;
+        if (themeObj.borderRadius) radius = themeObj.borderRadius;
+        if (themeObj.gridOpacity !== undefined) grid = String(themeObj.gridOpacity);
+        if (themeObj.enableBlur !== undefined) enableBlur = themeObj.enableBlur;
+      } catch (e) {
+        console.error("Failed to parse themeJson", e);
+      }
+    } else {
+      accent = localStorage.getItem('novaforms-accent') ?? 'default';
+      radius = localStorage.getItem('novaforms-radius') ?? '16px';
+      grid = localStorage.getItem('novaforms-grid') ?? '0.03';
+      enableBlur = localStorage.getItem('novaforms-enable-blur') === 'true';
+    }
 
     const root = document.documentElement;
     root.style.setProperty('--card-radius', radius);
@@ -753,11 +1001,15 @@ function FormIntakeComponent() {
     let errorFields: string[] = [];
 
     for (const q of formConfig.questions) {
+      if (hiddenQuestions.has(q.id)) {
+        continue;
+      }
       const val = answers[q.id];
       const hasValue = (val !== undefined && val !== null && val !== '');
 
       // Required Check
-      if (q.required) {
+      const isReq = requiredQuestions.has(q.id);
+      if (isReq) {
         if (!hasValue) {
           isValid = false;
           errorFields.push(`"${q.title}" is required.`);
@@ -913,7 +1165,14 @@ function FormIntakeComponent() {
       questionsJson: JSON.stringify(formConfig.questions),
       answersJson: JSON.stringify(answers),
       message: formConfig.description,
-      password: password
+      password: password,
+      browser: uaData.browser,
+      os: uaData.os,
+      deviceType: uaData.deviceType,
+      country: geoData.country,
+      city: geoData.city,
+      referer: typeof document !== 'undefined' ? (document.referrer || 'Direct') : 'Direct',
+      completionTimeSeconds: Math.floor((Date.now() - loadStartTime) / 1000)
     };
 
     try {
@@ -925,19 +1184,26 @@ function FormIntakeComponent() {
           body: JSON.stringify(payload)
         });
       } else {
+        const savedToken = typeof window !== 'undefined' ? sessionStorage.getItem(`novaforms-session-token-${formId}`) : null;
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (savedToken) {
+          headers['X-Form-Token'] = savedToken;
+        }
         response = await fetch(`${API_BASE}/api/submissions`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify(payload)
         });
       }
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || 'Submit failed');
+        const resJson = await response.json().catch(() => ({}));
+        const errorData = resJson.data !== undefined ? resJson.data : resJson;
+        throw new Error(resJson.message || 'Submit failed');
       }
 
-      const resData = await response.json();
+      const resJson = await response.json();
+      const resData = resJson.data !== undefined ? resJson.data : resJson;
       if (resData && resData.id) {
         setNewSubmissionId(resData.id);
       }
@@ -949,6 +1215,11 @@ function FormIntakeComponent() {
       }
 
       setSubmitted(true);
+      void confetti({
+        particleCount: 120,
+        spread: 80,
+        origin: { y: 0.6 }
+      });
 
       if (settings.redirectUrl && settings.showThankYou) {
         setTimeout(() => {
@@ -974,13 +1245,24 @@ function FormIntakeComponent() {
 
   // Handle password-protected forms challenge
   if (accessMode === 'PASSWORD_PROTECTED' && !passwordVerified) {
+    let statusPages: Record<string, any> = {};
+    if (formConfig.statusPagesJson) {
+      try {
+        statusPages = JSON.parse(formConfig.statusPagesJson);
+      } catch (e) {}
+    }
+    const customPassPage = statusPages['password_required'];
+    const pTitle = customPassPage?.title || 'Secure Entry';
+    const pDesc = customPassPage?.description || 'This form is password-protected. Please enter the passcode to proceed.';
+    const pIllustration = customPassPage?.illustration || '🛡️';
+
     return (
       <main className="shell" style={{ maxWidth: '480px', padding: '100px 24px' }}>
         <form onSubmit={handleVerifyPassword} className="canvas" style={{ textAlign: 'center', padding: '40px 24px', border: '1px solid var(--border)', borderRadius: 'var(--card-radius)', gap: '16px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-          <div style={{ fontSize: '3rem', color: 'var(--accent)', marginBottom: '8px' }}>🛡️</div>
-          <h2 style={{ fontSize: '1.6rem', margin: '0', fontFamily: 'Orbitron, sans-serif' }}>Secure Entry</h2>
+          <div style={{ fontSize: '3rem', color: 'var(--accent)', marginBottom: '8px' }}>{pIllustration}</div>
+          <h2 style={{ fontSize: '1.6rem', margin: '0', fontFamily: 'Orbitron, sans-serif' }}>{pTitle}</h2>
           <p style={{ color: 'var(--muted)', fontSize: '0.9rem', margin: '0 0 12px' }}>
-            This form is password-protected. Please enter the passcode to proceed.
+            {pDesc}
           </p>
           
           {passwordError && (
@@ -1014,38 +1296,68 @@ function FormIntakeComponent() {
     let btnLabel = '';
     let redirectUrl = '';
 
+    let statusPages: Record<string, any> = {};
+    if (formConfig.statusPagesJson) {
+      try {
+        statusPages = JSON.parse(formConfig.statusPagesJson);
+      } catch (e) {
+        console.error("Failed to parse statusPagesJson", e);
+      }
+    }
+
+    let pageKey = '';
+    if (dynamicStatus === 'PAUSED') pageKey = 'paused';
+    else if (dynamicStatus === 'CLOSED') pageKey = 'closed';
+    else if (dynamicStatus === 'LIMIT_REACHED') pageKey = 'limit_reached';
+    else if (dynamicStatus === 'SCHEDULED') pageKey = 'scheduled';
+    else if (dynamicStatus === 'MAINTENANCE') pageKey = 'maintenance';
+    else if (dynamicStatus === 'ARCHIVED') pageKey = 'archived';
+    else if (dynamicStatus === 'DRAFT') pageKey = 'draft';
+
+    const customPage = pageKey ? statusPages[pageKey] : null;
+
     if (dynamicStatus === 'DRAFT') {
-      title = 'Draft Mode';
-      description = 'This form is in draft mode and is not accepting responses publicly.';
-      illustration = '🟡';
+      title = customPage?.title || 'Draft Mode';
+      description = customPage?.description || 'This form is in draft mode and is not accepting responses publicly.';
+      illustration = customPage?.illustration || '🟡';
+      btnLabel = customPage?.buttonText || '';
+      redirectUrl = customPage?.redirectUrl || '';
     } else if (dynamicStatus === 'ARCHIVED') {
-      title = 'Form Archived';
-      description = 'This form has been archived and is read-only.';
-      illustration = '📦';
+      title = customPage?.title || 'Form Archived';
+      description = customPage?.description || 'This form has been archived and is read-only.';
+      illustration = customPage?.illustration || '📦';
+      btnLabel = customPage?.buttonText || '';
+      redirectUrl = customPage?.redirectUrl || '';
     } else if (dynamicStatus === 'PAUSED') {
-      title = formConfig.settings.pausedTitle || 'Form Paused';
-      description = formConfig.settings.pausedDescription || 'This form is temporarily paused. Check back later.';
-      illustration = formConfig.settings.pausedIllustration || '⏸';
-      btnLabel = formConfig.settings.pausedButtonLabel || '';
-      redirectUrl = formConfig.settings.pausedRedirectUrl || '';
+      title = customPage?.title || 'Form Paused';
+      description = customPage?.description || 'This form is temporarily paused. Check back later.';
+      illustration = customPage?.illustration || '⏸';
+      btnLabel = customPage?.buttonText || '';
+      redirectUrl = customPage?.redirectUrl || '';
     } else if (dynamicStatus === 'CLOSED') {
-      title = formConfig.settings.closedTitle || 'Form Closed';
-      description = formConfig.settings.closedDescription || 'This form has been closed by its owner to new responses.';
-      illustration = formConfig.settings.closedIllustration || '🔒';
-      btnLabel = formConfig.settings.closedButtonLabel || '';
-      redirectUrl = formConfig.settings.closedRedirectUrl || '';
+      title = customPage?.title || 'Form Closed';
+      description = customPage?.description || 'This form has been closed by its owner to new responses.';
+      illustration = customPage?.illustration || '🔒';
+      btnLabel = customPage?.buttonText || '';
+      redirectUrl = customPage?.redirectUrl || '';
     } else if (dynamicStatus === 'LIMIT_REACHED') {
-      title = formConfig.settings.limitTitle || 'Capacity Reached';
-      description = formConfig.settings.limitDescription || 'This form has reached its maximum response capacity.';
-      illustration = formConfig.settings.limitIllustration || '🚫';
-      btnLabel = formConfig.settings.limitButtonLabel || '';
-      redirectUrl = formConfig.settings.limitRedirectUrl || '';
+      title = customPage?.title || 'Capacity Reached';
+      description = customPage?.description || 'This form has reached its maximum response capacity.';
+      illustration = customPage?.illustration || '🚫';
+      btnLabel = customPage?.buttonText || '';
+      redirectUrl = customPage?.redirectUrl || '';
     } else if (dynamicStatus === 'SCHEDULED') {
-      title = formConfig.settings.scheduledTitle || 'Opening Soon';
-      description = formConfig.settings.scheduledDescription || 'This form is not accepting responses yet.';
-      illustration = formConfig.settings.scheduledIllustration || '⏳';
-      btnLabel = formConfig.settings.scheduledButtonLabel || '';
-      redirectUrl = formConfig.settings.scheduledRedirectUrl || '';
+      title = customPage?.title || 'Opening Soon';
+      description = customPage?.description || 'This form is not accepting responses yet.';
+      illustration = customPage?.illustration || '⏳';
+      btnLabel = customPage?.buttonText || '';
+      redirectUrl = customPage?.redirectUrl || '';
+    } else if (dynamicStatus === 'MAINTENANCE') {
+      title = customPage?.title || 'Maintenance Mode';
+      description = customPage?.description || 'This form is currently down for maintenance.';
+      illustration = customPage?.illustration || '🛠';
+      btnLabel = customPage?.buttonText || '';
+      redirectUrl = customPage?.redirectUrl || '';
     }
 
     return (
@@ -1157,9 +1469,10 @@ function FormIntakeComponent() {
 
           <div className="question-stack" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             {formConfig.questions
-              .filter((question) => (question.pageNumber || 1) === currentPage)
+              .filter((question) => (question.pageNumber || 1) === currentPage && !hiddenQuestions.has(question.id))
               .map((question) => {
                 const value = answers[question.id];
+                const isRequired = requiredQuestions.has(question.id);
                 const getMultiplierCount = () => {
                   if (!question.multiplyEnabled || !question.multiplyTriggerId) return 1;
                   const triggerAnswer = answers[question.multiplyTriggerId];
@@ -1220,7 +1533,7 @@ function FormIntakeComponent() {
                   <div key={question.id} className="preview-card" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     {question.mediaPosition === 'above' && renderQuestionMedia(question)}
                     <label className="preview-label" style={{ display: 'block', fontSize: '1rem', fontWeight: 600 }}>
-                      {question.title} {question.required && <span style={{ color: 'var(--accent)' }}>*</span>}
+                      {question.title} {isRequired && <span style={{ color: 'var(--accent)' }}>*</span>}
                     </label>
                     {question.helpText && <span className="preview-help" style={{ display: 'block', fontSize: '0.8rem', color: 'var(--muted)' }}>{question.helpText}</span>}
 
@@ -1239,7 +1552,7 @@ function FormIntakeComponent() {
                               key={idx}
                               type={inputType}
                               placeholder={question.placeholder || (count > 1 ? `Participant ${idx + 1} answer` : '')}
-                              required={question.required && idx === 0}
+                              required={isRequired && idx === 0}
                               value={val}
                               onChange={(e) => {
                                 if (count > 1) {
@@ -1258,23 +1571,23 @@ function FormIntakeComponent() {
                             <div key={idx} style={{ display: 'flex', alignItems: 'stretch', gap: '0', borderRadius: 'var(--card-radius)', overflow: 'hidden', border: '1px solid var(--border)', background: 'rgba(255,255,255,0.01)' }}>
                               {question.prefix && <span style={{ display: 'flex', alignItems: 'center', padding: '0 12px', background: 'rgba(255,255,255,0.05)', borderRight: '1px solid var(--border)', fontSize: '0.85rem', color: 'var(--muted)' }}>{question.prefix}</span>}
                               <div style={{ flex: 1 }}>
-                                <input
-                                  type={inputType}
-                                  placeholder={question.placeholder || ''}
-                                  required={question.required && idx === 0}
-                                  value={val}
-                                  onChange={(e) => {
-                                    if (count > 1) {
-                                      const next = Array.isArray(value) ? [...value] : [typeof value === 'string' ? value : ''];
-                                      while (next.length < count) next.push('');
-                                      next[idx] = e.target.value;
-                                      setAnswer(question.id, next);
-                                    } else {
-                                      setAnswer(question.id, e.target.value);
-                                    }
-                                  }}
-                                  style={{ border: 'none', borderRadius: 0, width: '100%', background: 'transparent' }}
-                                />
+                                  <input
+                                   type={inputType}
+                                   placeholder={question.placeholder || ''}
+                                   required={isRequired && idx === 0}
+                                   value={val}
+                                   onChange={(e) => {
+                                     if (count > 1) {
+                                       const next = Array.isArray(value) ? [...value] : [typeof value === 'string' ? value : ''];
+                                       while (next.length < count) next.push('');
+                                       next[idx] = e.target.value;
+                                       setAnswer(question.id, next);
+                                     } else {
+                                       setAnswer(question.id, e.target.value);
+                                     }
+                                   }}
+                                   style={{ border: 'none', borderRadius: 0, width: '100%', background: 'transparent' }}
+                                 />
                               </div>
                               {question.suffix && <span style={{ display: 'flex', alignItems: 'center', padding: '0 12px', background: 'rgba(255,255,255,0.05)', borderLeft: '1px solid var(--border)', fontSize: '0.85rem', color: 'var(--muted)' }}>{question.suffix}</span>}
                             </div>
@@ -1292,7 +1605,7 @@ function FormIntakeComponent() {
                               key={idx}
                               rows={4}
                               placeholder={question.placeholder || (count > 1 ? `Participant ${idx + 1} details` : '')}
-                              required={question.required && idx === 0}
+                              required={isRequired && idx === 0}
                               value={val}
                               onChange={(e) => {
                                 if (count > 1) {
@@ -1312,7 +1625,7 @@ function FormIntakeComponent() {
 
                     {question.type === 'dropdown' && (
                       <select
-                        required={question.required}
+                        required={isRequired}
                         value={typeof value === 'string' ? value : ''}
                         onChange={(e) => setAnswer(question.id, e.target.value)}
                       >
@@ -1330,7 +1643,7 @@ function FormIntakeComponent() {
                             <input
                               type="radio"
                               name={question.id}
-                              required={question.required && !value}
+                              required={isRequired && !value}
                               value={opt}
                               checked={typeof value === 'string' && value === opt}
                               onChange={(e) => setAnswer(question.id, e.target.value)}
@@ -1709,17 +2022,22 @@ function FormIntakeComponent() {
                     className="submit-button"
                     style={{ padding: '8px 16px', borderRadius: '8px' }}
                     onClick={() => {
-                      // Validate required fields on current page
                       const pageQuestions = formConfig.questions.filter(q => (q.pageNumber || 1) === currentPage);
                       const invalid = pageQuestions.some(q => {
-                        if (!q.required) return false;
+                        if (hiddenQuestions.has(q.id)) return false;
+                        const isReq = requiredQuestions.has(q.id);
+                        if (!isReq) return false;
                         const val = answers[q.id];
                         return !val || (typeof val === 'string' && val.trim() === '') || (Array.isArray(val) && val.length === 0);
                       });
                       if (invalid) {
                         alert("Please fill out all required fields on this page before proceeding.");
                       } else {
-                        setCurrentPage(prev => prev + 1);
+                        if (forcedJumpPage && forcedJumpPage > currentPage) {
+                          setCurrentPage(forcedJumpPage);
+                        } else {
+                          setCurrentPage(prev => prev + 1);
+                        }
                       }
                     }}
                   >

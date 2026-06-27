@@ -36,7 +36,8 @@ export default function Header() {
       try {
         const res = await fetch(`${API_BASE}/api/form-config/${formId}`);
         if (res.ok) {
-          const data = await res.json();
+          const resData = await res.json();
+          const data = resData.data !== undefined ? resData.data : resData;
           setActiveTransfer(data.activeTransfer);
           setCollaborators(data.collaborators);
         }
@@ -72,7 +73,8 @@ export default function Header() {
     try {
       const res = await fetch(`${API_BASE}/api/form-config/${formId}/transfer/accept`, { method: 'POST' });
       if (res.ok) {
-        const tr = await res.json();
+        const resData = await res.json();
+        const tr = resData.data !== undefined ? resData.data : resData;
         setActiveTransfer(tr);
         window.dispatchEvent(new Event('novaforms-transfer-updated'));
       }
@@ -86,7 +88,8 @@ export default function Header() {
     try {
       const res = await fetch(`${API_BASE}/api/form-config/${formId}/transfer/confirm`, { method: 'POST' });
       if (res.ok) {
-        const tr = await res.json();
+        const resData = await res.json();
+        const tr = resData.data !== undefined ? resData.data : resData;
         setActiveTransfer(null);
         window.dispatchEvent(new Event('novaforms-transfer-updated'));
         window.dispatchEvent(new Event('novaforms-user-changed'));

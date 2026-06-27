@@ -5,7 +5,6 @@ import java.util.Map;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -24,13 +23,13 @@ public class StorageController {
     }
 
     @PostMapping("/upload")
-    public ResponseEntity<?> uploadFile(
+    public ApiResponse<Map<String, String>> uploadFile(
             @RequestParam("file") MultipartFile file,
             @RequestParam(value = "formId", required = false) Long formId,
             @RequestParam(value = "questionId", required = false) String questionId) {
             
         if (file.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Please select a file to upload"));
+            throw new org.springframework.web.server.ResponseStatusException(HttpStatus.BAD_REQUEST, "Please select a file to upload");
         }
         try {
             String url = storageService.uploadFile(file);
@@ -50,10 +49,9 @@ public class StorageController {
             );
             fileMetadataRepository.save(metadata);
             
-            return ResponseEntity.ok(Map.of("url", url));
+            return new ApiResponse<>(HttpStatus.OK.value(), "File uploaded successfully", Map.of("url", url));
         } catch (IOException e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("error", "Failed to upload file: " + e.getMessage()));
+            throw new org.springframework.web.server.ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to upload file: " + e.getMessage());
         }
     }
 }

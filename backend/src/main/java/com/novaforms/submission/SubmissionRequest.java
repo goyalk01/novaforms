@@ -1,7 +1,6 @@
 package com.novaforms.submission;
 
 import java.util.List;
-
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 
@@ -20,12 +19,22 @@ public record SubmissionRequest(
     String questionsJson,
     String answersJson,
     String message,
-    String password) {
+    String password,
+    
+    // Analytics fields
+    String browser,
+    String os,
+    String deviceType,
+    String country,
+    String city,
+    String referer,
+    Integer completionTimeSeconds) {
   public SubmissionRequest {
     rating = rating == null ? 0 : rating;
     submissionMode = submissionMode == null || submissionMode.isBlank() ? "standard" : submissionMode;
     themeMode = themeMode == null || themeMode.isBlank() ? "silver" : themeMode;
     layoutDensity = layoutDensity == null || layoutDensity.isBlank() ? "comfortable" : layoutDensity;
     interests = interests == null ? List.of() : interests;
+    completionTimeSeconds = completionTimeSeconds == null ? 0 : completionTimeSeconds;
   }
 }

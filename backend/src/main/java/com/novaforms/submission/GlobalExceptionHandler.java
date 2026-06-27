@@ -1,8 +1,5 @@
 package com.novaforms.submission;
 
-import java.time.Instant;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.stream.Collectors;
 import org.slf4j.MDC;
 import org.springframework.http.HttpStatus;
@@ -24,42 +21,36 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(ResponseStatusException.class)
-    public ResponseEntity<Map<String, Object>> handleResponseStatusException(ResponseStatusException ex) {
-        Map<String, Object> body = new HashMap<>();
-        body.put("timestamp", Instant.now().toString());
-        body.put("status", ex.getStatusCode().value());
-        body.put("error", ex.getReason());
-        body.put("requestId", getRequestId());
+    public ResponseEntity<ApiResponse<Void>> handleResponseStatusException(ResponseStatusException ex) {
+        ApiResponse<Void> body = new ApiResponse<>(ex.getStatusCode().value(), ex.getReason(), null);
         return new ResponseEntity<>(body, ex.getStatusCode());
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<Map<String, Object>> handleValidationExceptions(MethodArgumentNotValidException ex) {
-        Map<String, Object> body = new HashMap<>();
-        body.put("timestamp", Instant.now().toString());
-        body.put("status", HttpStatus.BAD_REQUEST.value());
-        
+    public ResponseEntity<ApiResponse<Void>> handleValidationExceptions(MethodArgumentNotValidException ex) {
         String errorMessage = ex.getBindingResult()
             .getFieldErrors()
             .stream()
             .map(FieldError::getDefaultMessage)
             .collect(Collectors.joining(", "));
             
-        body.put("error", "Validation failed: " + errorMessage);
-        body.put("requestId", getRequestId());
+        ApiResponse<Void> body = new ApiResponse<>(HttpStatus.BAD_REQUEST.value(), "Validation failed: " + errorMessage, null);
+        return new ResponseEntity<>(body, HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ApiResponse<Void>> handleIllegalArgumentException(IllegalArgumentException ex) {
+        ApiResponse<Void> body = new ApiResponse<>(HttpStatus.BAD_REQUEST.value(), ex.getMessage(), null);
         return new ResponseEntity<>(body, HttpStatus.BAD_REQUEST);
     }
 
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<Map<String, Object>> handleGenericException(Exception ex) {
-        Map<String, Object> body = new HashMap<>();
-        body.put("timestamp", Instant.now().toString());
-        body.put("status", HttpStatus.INTERNAL_SERVER_ERROR.value());
-        body.put("error", ex.getMessage() != null ? ex.getMessage() : "An unexpected error occurred");
-        body.put("requestId", getRequestId());
+    public ResponseEntity<ApiResponse<Void>> handleGenericException(Exception ex) {
+        String msg = ex.getMessage() != null ? ex.getMessage() : "An unexpected error occurred";
+        ApiResponse<Void> body = new ApiResponse<>(HttpStatus.INTERNAL_SERVER_ERROR.value(), msg, null);
         
         // Log the exception details
-        System.err.println("[" + getRequestId() + "] Exception: " + ex.getMessage());
+        System.err.println("[" + body.getRequestId() + "] Exception: " + ex.getMessage());
         ex.printStackTrace();
         
         return new ResponseEntity<>(body, HttpStatus.INTERNAL_SERVER_ERROR);

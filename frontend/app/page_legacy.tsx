@@ -41,8 +41,7 @@ export default function WorkspaceDashboard() {
       setLoading(true);
       const res = await fetch(`${API_BASE}/api/form-config/list?email=${encodeURIComponent(currentUser)}`);
       if (res.ok) {
-        const resData = await res.json();
-        const data = resData.data !== undefined ? resData.data : resData;
+        const data = await res.json();
         setForms(data);
         setStatus('Connected');
       } else {
@@ -91,8 +90,7 @@ export default function WorkspaceDashboard() {
       });
 
       if (res.ok) {
-        const resData = await res.json();
-        const newForm = resData.data !== undefined ? resData.data : resData;
+        const newForm = await res.json();
         setShowCreateModal(false);
         setFormName('');
         setFormTitle('');
@@ -212,7 +210,7 @@ export default function WorkspaceDashboard() {
                           Submissions
                         </Link>
                         <a href={`/form?id=${form.id}`} target="_blank" rel="noopener noreferrer" className="ghost-button mini active" style={{ color: 'var(--accent)' }}>
-                          Live Link ↗
+                          Live Link Γåù
                         </a>
                       </div>
                     </div>
@@ -260,7 +258,7 @@ export default function WorkspaceDashboard() {
                           Submissions
                         </Link>
                         <a href={`/form?id=${form.id}`} target="_blank" rel="noopener noreferrer" className="ghost-button mini active" style={{ color: 'var(--accent)' }}>
-                          Live Link ↗
+                          Live Link Γåù
                         </a>
                       </div>
                     </div>
