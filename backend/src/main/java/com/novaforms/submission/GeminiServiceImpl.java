@@ -29,10 +29,17 @@ public class GeminiServiceImpl implements GeminiService {
     this.formConfigRepository = formConfigRepository;
   }
 
+  private boolean isAIAvailable() {
+    return apiKey != null && !apiKey.isBlank();
+  }
+
+  private static final String AI_UNAVAILABLE_RESPONSE =
+      "{\"error\":\"AI features are currently unavailable. Please configure GEMINI_API_KEY to enable AI capabilities.\",\"available\":false}";
+
   @Override
   public String generateForm(String prompt) {
-    if (apiKey == null || apiKey.isBlank()) {
-      return generateOfflineForm(prompt);
+    if (!isAIAvailable()) {
+      return AI_UNAVAILABLE_RESPONSE;
     }
 
     String apiTarget = "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key=" + apiKey;
@@ -87,13 +94,13 @@ public class GeminiServiceImpl implements GeminiService {
       System.err.println("Gemini generateForm API call failed: " + e.getMessage());
     }
 
-    return generateOfflineForm(prompt);
+    return "{\"error\":\"AI form generation failed. The Gemini API returned an error. Please try again later.\",\"available\":false}";
   }
 
   @Override
   public String editQuestion(String action, String questionJson, String context) {
-    if (apiKey == null || apiKey.isBlank()) {
-      return executeOfflineQuestionAction(action, questionJson, context);
+    if (!isAIAvailable()) {
+      return AI_UNAVAILABLE_RESPONSE;
     }
 
     String apiTarget = "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key=" + apiKey;
@@ -126,7 +133,7 @@ public class GeminiServiceImpl implements GeminiService {
       System.err.println("Gemini editQuestion API call failed: " + e.getMessage());
     }
 
-    return executeOfflineQuestionAction(action, questionJson, context);
+    return "{\"error\":\"AI question editing failed. The Gemini API returned an error. Please try again later.\",\"available\":false}";
   }
 
   @Override
@@ -136,7 +143,11 @@ public class GeminiServiceImpl implements GeminiService {
     String formTitle = formConfig != null ? formConfig.getTitle() : "Form #" + formId;
 
     if (submissions.isEmpty()) {
-      return "{\"insights\":\"No submissions available yet to generate AI insights.\"}" ;
+      return "{\"insights\":\"No submissions available yet to generate AI insights.\"}";
+    }
+
+    if (!isAIAvailable()) {
+      return AI_UNAVAILABLE_RESPONSE;
     }
 
     // Compile text answers summary for analysis
@@ -148,10 +159,6 @@ public class GeminiServiceImpl implements GeminiService {
       responsesSummary.append("Response #").append(s.getId())
           .append(" - Rating: ").append(s.getRating()).append("\n")
           .append("Answers: ").append(s.getAnswersJson()).append("\n\n");
-    }
-
-    if (apiKey == null || apiKey.isBlank()) {
-      return generateOfflineInsights(submissions, formTitle);
     }
 
     String apiTarget = "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key=" + apiKey;
@@ -191,7 +198,7 @@ public class GeminiServiceImpl implements GeminiService {
       System.err.println("Gemini generateResponseInsights API call failed: " + e.getMessage());
     }
 
-    return generateOfflineInsights(submissions, formTitle);
+    return "{\"error\":\"AI analysis failed. The Gemini API returned an error. Please try again later.\",\"available\":false}";
   }
 
   private String extractJsonFromResponse(String rawBody) {
@@ -215,123 +222,5 @@ public class GeminiServiceImpl implements GeminiService {
       System.err.println("Failed to parse Gemini raw response: " + e.getMessage());
     }
     return rawBody;
-  }
-
-  // Offline Fallbacks
-  private String generateOfflineForm(String prompt) {
-    String clean = prompt.toLowerCase();
-    if (clean.contains("hackathon") || clean.contains("register") || clean.contains("event")) {
-      return "{\n" +
-          "  \"title\": \"Event & Hackathon Registration\",\n" +
-          "  \"description\": \"Sign up for the upcoming coding sprints and workshops.\",\n" +
-          "  \"theme\": \"cyberpunk\",\n" +
-          "  \"layoutDensity\": \"comfortable\",\n" +
-          "  \"questions\": [\n" +
-          "    {\"id\": \"q_name\", \"title\": \"Full Name\", \"type\": \"short-answer\", \"required\": true, \"placeholder\": \"John Doe\"},\n" +
-          "    {\"id\": \"q_email\", \"title\": \"Developer Email\", \"type\": \"email\", \"required\": true, \"placeholder\": \"developer@novaforms.io\"},\n" +
-          "    {\"id\": \"q_track\", \"title\": \"Preferred Theme Track\", \"type\": \"multiple-choice\", \"required\": true, \"options\": [\"AI Agents\", \"Web3 & Cyberpunk UI\", \"Embedded Systems\"]},\n" +
-          "    {\"id\": \"q_experience\", \"title\": \"Years of Development Experience\", \"type\": \"dropdown\", \"required\": true, \"options\": [\"Less than 1 year\", \"1 to 3 years\", \"3+ years\"]},\n" +
-          "    {\"id\": \"q_bio\", \"title\": \"Github Profile or Brief Bio\", \"type\": \"paragraph\", \"required\": false, \"placeholder\": \"Provide link or describe your skills...\"}\n" +
-          "  ],\n" +
-          "  \"settings\": {\n" +
-          "    \"allowMultiple\": false,\n" +
-          "    \"showThankYou\": true,\n" +
-          "    \"successMessage\": \"Registration completed! Details will be delivered to your inbox.\"\n" +
-          "  }\n" +
-          "}";
-    }
-
-    // Default general feedback form
-    return "{\n" +
-        "  \"title\": \"Customer Satisfaction survey\",\n" +
-        "  \"description\": \"Help us improve our service by providing your feedback.\",\n" +
-        "  \"theme\": \"silver\",\n" +
-        "  \"layoutDensity\": \"comfortable\",\n" +
-        "  \"questions\": [\n" +
-        "    {\"id\": \"q_name\", \"title\": \"Your Name\", \"type\": \"short-answer\", \"required\": false, \"placeholder\": \"Jane Doe\"},\n" +
-        "    {\"id\": \"q_rating\", \"title\": \"Overall Service Rating\", \"type\": \"star-rating\", \"required\": true, \"scaleMax\": 5},\n" +
-        "    {\"id\": \"q_recomm\", \"title\": \"How likely are you to recommend us?\", \"type\": \"scale\", \"required\": true, \"scaleMax\": 10},\n" +
-        "    {\"id\": \"q_feedback\", \"title\": \"What did you enjoy most about our service?\", \"type\": \"paragraph\", \"required\": true, \"placeholder\": \"Type details here...\"}\n" +
-        "  ],\n" +
-        "  \"settings\": {\n" +
-        "    \"allowMultiple\": true,\n" +
-        "    \"showThankYou\": true,\n" +
-        "    \"successMessage\": \"Thank you for your valuable feedback!\"\n" +
-        "  }\n" +
-        "}";
-  }
-
-  private String executeOfflineQuestionAction(String action, String questionJson, String context) {
-    try {
-      Map<String, Object> qMap = mapper.readValue(questionJson, new TypeReference<Map<String, Object>>() {});
-      String title = (String) qMap.getOrDefault("title", "Question Label");
-      String type = (String) qMap.getOrDefault("type", "short-answer");
-
-      String cleanAction = action.toLowerCase();
-      if (cleanAction.contains("improve") || cleanAction.contains("rewrite")) {
-        qMap.put("title", title + " (Refined by AI)");
-        qMap.put("helpText", "Please provide a detailed response.");
-      } else if (cleanAction.contains("translate")) {
-        qMap.put("title", title + " (" + context + " Translation)");
-      } else if (cleanAction.contains("shorten")) {
-        qMap.put("title", title.length() > 20 ? title.substring(0, 18) + "?" : title);
-      } else if (cleanAction.contains("expand")) {
-        qMap.put("title", title + " - please outline any specific circumstances or details that apply.");
-      } else if (cleanAction.contains("options")) {
-        qMap.put("options", Arrays.asList("Excellent", "Satisfactory", "Needs Improvement", "Poor"));
-      } else if (cleanAction.contains("placeholder")) {
-        qMap.put("placeholder", "e.g. Type answer here...");
-      } else if (cleanAction.contains("validation")) {
-        if ("email".equals(type)) {
-          qMap.put("validationRegex", "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
-          qMap.put("validationMessage", "Invalid email format");
-        } else if ("number".equals(type)) {
-          qMap.put("validationRegex", "^[0-9]+$");
-          qMap.put("validationMessage", "Must be a numeric value");
-        }
-      }
-
-      return mapper.writeValueAsString(qMap);
-    } catch (Exception e) {
-      return questionJson;
-    }
-  }
-
-  private String generateOfflineInsights(List<Submission> submissions, String title) {
-    long count = submissions.size();
-    double avgRating = submissions.stream()
-        .mapToDouble(s -> s.getRating() != null ? s.getRating() : 0.0)
-        .average()
-        .orElse(0.0);
-    avgRating = Math.round(avgRating * 10.0) / 10.0;
-
-    int sentimentScore = (int) Math.round((avgRating / 5.0) * 100.0);
-    String summary = sentimentScore >= 70 ? "Highly positive feedback with some feature requests." : "Mixed feedback. Action recommended to address performance and usability issues.";
-
-    return "{\n" +
-        "  \"sentimentScore\": " + sentimentScore + ",\n" +
-        "  \"sentimentSummary\": \"" + summary + "\",\n" +
-        "  \"topInsights\": [\n" +
-        "    \"" + count + " total responses analyzed for form: " + title + ".\",\n" +
-        "    \"Average satisfaction rating registered at " + avgRating + " out of 5.\",\n" +
-        "    \"Participants frequently request faster processing times and sleeker dark modes.\"\n" +
-        "  ],\n" +
-        "  \"positiveTrends\": [\n" +
-        "    \"High satisfaction with the new cyberpunk design accent system.\",\n" +
-        "    \"Fast loading times reported on the participant form intake side.\"\n" +
-        "  ],\n" +
-        "  \"negativeTrends\": [\n" +
-        "    \"Some users complain about missing password autofills.\",\n" +
-        "    \"Minor confusion reported on complex rating matrices on tablets.\"\n" +
-        "  ],\n" +
-        "  \"commonIssues\": [\n" +
-        "    \"Invalid email entries submitted due to regex typos.\",\n" +
-        "    \"Slow uploads reported when attaching large pdf files (>10MB).\"\n" +
-        "  ],\n" +
-        "  \"suggestedImprovements\": [\n" +
-        "    \"Pre-build clean validations for email formats on standard forms.\",\n" +
-        "    \"Embed compressed preview options for image attachments.\"\n" +
-        "  ]\n" +
-        "}";
   }
 }
