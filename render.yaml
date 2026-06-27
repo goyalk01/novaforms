@@ -1,20 +1,23 @@
 # ==========================================================================
 # Render Blueprint Specification (render.yaml)
 # Deploy NovaForms Frontend & Backend services in a single click.
+# Docs: https://docs.render.com/blueprint-spec
 # ==========================================================================
 
 services:
   # ☕ Backend Service (Java Spring Boot API)
   - type: web
     name: novaforms-backend
-    env: java
+    runtime: docker
     rootDir: backend
     plan: free
-    buildCommand: ./mvnw clean package -DskipTests
-    startCommand: java -jar target/*.jar
+    dockerfilePath: ./Dockerfile
     envVars:
       - key: SPRING_PROFILES_ACTIVE
         value: prod
+      # Render assigns a dynamic port — Spring Boot must bind to it
+      - key: PORT
+        value: 8080
       # Connection to Neon PostgreSQL
       - key: DATABASE_URL
         sync: false
@@ -22,10 +25,10 @@ services:
         sync: false
       - key: DATABASE_PASSWORD
         sync: false
-      # Google Gemini AI Config
+      # Google Gemini AI Config (optional)
       - key: GEMINI_API_KEY
         sync: false
-      # Cloudinary Attachment Config
+      # Cloudinary Attachment Config (optional)
       - key: CLOUDINARY_CLOUD_NAME
         sync: false
       - key: CLOUDINARY_API_KEY
@@ -47,14 +50,16 @@ services:
   # 🖥️ Frontend Service (Next.js App)
   - type: web
     name: novaforms-frontend
-    env: node
+    runtime: node
     rootDir: frontend
     plan: free
-    buildCommand: npm run build
+    buildCommand: npm install && npm run build
     startCommand: npm run start
     envVars:
       - key: NODE_VERSION
-        value: 22
+        value: "22"
+      - key: PORT
+        value: "3000"
       # Auto-linked from Backend API URL
       - key: NEXT_PUBLIC_API_BASE_URL
         fromService:
