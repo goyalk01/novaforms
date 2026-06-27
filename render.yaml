@@ -10,8 +10,8 @@ services:
     env: java
     rootDir: backend
     plan: free
-    buildCommand: mvn clean package -DskipTests
-    startCommand: java -jar target/novaforms-backend-0.1.0.jar
+    buildCommand: ./mvnw clean package -DskipTests
+    startCommand: java -jar target/*.jar
     envVars:
       - key: SPRING_PROFILES_ACTIVE
         value: prod
@@ -53,6 +53,8 @@ services:
     buildCommand: npm run build
     startCommand: npm run start
     envVars:
+      - key: NODE_VERSION
+        value: 22
       # Auto-linked from Backend API URL
       - key: NEXT_PUBLIC_API_BASE_URL
         fromService:
