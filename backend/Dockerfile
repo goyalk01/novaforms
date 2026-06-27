@@ -1,13 +1,12 @@
 # ==========================================================================
 # Multi-stage Dockerfile for NovaForms Spring Boot Backend
-# Stage 1: Build with Maven    Stage 2: Run with lightweight JRE
 # ==========================================================================
 
 # ── Build Stage ──────────────────────────────────────────────────────────────
 FROM eclipse-temurin:21-jdk AS build
 WORKDIR /app
 
-# Copy Maven wrapper and pom first (layer caching for dependencies)
+# Copy Maven wrapper and pom first
 COPY .mvn/ .mvn/
 COPY mvnw pom.xml ./
 RUN chmod +x mvnw && ./mvnw dependency:go-offline -B
@@ -22,8 +21,7 @@ WORKDIR /app
 
 COPY --from=build /app/target/*.jar app.jar
 
-# Render sets PORT env var; Spring Boot reads server.port
-ENV PORT=8080
-EXPOSE ${PORT}
+# Documentation only
+EXPOSE 8080
 
-ENTRYPOINT java -Dserver.port=${PORT} -jar app.jar
+CMD ["java", "-jar", "app.jar"]
