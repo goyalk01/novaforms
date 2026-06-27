@@ -381,8 +381,14 @@ function AdminDashboardComponent() {
           <p className="lede">Access form database snapshots, export spreadsheets, and analyze submissions.</p>
         </div>
 
-        <div className="hero-panel" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 'var(--spacing-base)' }}>
-          <div className="stat-card">
+        <div className="hero-panel" style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+          gap: '16px',
+          minHeight: 'auto',
+          padding: '24px'
+        }}>
+          <div className="stat-card" style={{ position: 'relative', width: 'auto', top: 'auto', left: 'auto', right: 'auto', transform: 'none' }}>
             <span>Form Status</span>
             <strong style={{
               fontSize: '1.25rem',
@@ -401,35 +407,44 @@ function AdminDashboardComponent() {
                formConfig?.dynamicStatus === 'ARCHIVED' ? '📦 Archived' : '🟡 Draft'}
             </strong>
           </div>
-          <div className="stat-card">
+          <div className="stat-card" style={{ position: 'relative', width: 'auto', top: 'auto', left: 'auto', right: 'auto', transform: 'none' }}>
             <span>Views & Conversion</span>
             <strong style={{ fontSize: '1.2rem' }}>
               👁️ {analytics?.totalViews ?? '-'} / 🎯 {analytics?.conversionRate !== undefined ? (analytics.conversionRate * 100).toFixed(0) + '%' : '-'}
             </strong>
           </div>
-          <div className="stat-card">
+          <div className="stat-card" style={{ position: 'relative', width: 'auto', top: 'auto', left: 'auto', right: 'auto', transform: 'none' }}>
             <span>Responses Capacity</span>
             <strong style={{ fontSize: '1.25rem' }}>
               {formConfig?.submissionCount ?? 0} / {formConfig?.config?.maxResponses > 0 ? formConfig.config.maxResponses : '∞'}
             </strong>
           </div>
           {formConfig?.dynamicStatus === 'SCHEDULED' && (
-            <div className="stat-card">
+            <div className="stat-card" style={{ position: 'relative', width: 'auto', top: 'auto', left: 'auto', right: 'auto', transform: 'none' }}>
               <span>Opening In</span>
               <strong style={{ fontSize: '1.2rem', color: 'var(--accent)', fontFamily: 'Orbitron, sans-serif' }}>{timeRemaining}</strong>
             </div>
           )}
           {formConfig?.dynamicStatus === 'OPEN' && formConfig?.config?.closeAt && (
-            <div className="stat-card">
+            <div className="stat-card" style={{ position: 'relative', width: 'auto', top: 'auto', left: 'auto', right: 'auto', transform: 'none' }}>
               <span>Time Remaining</span>
               <strong style={{ fontSize: '1.2rem', color: 'var(--accent)', fontFamily: 'Orbitron, sans-serif' }}>{timeRemaining}</strong>
             </div>
           )}
-          <div className="stat-card">
+          <div className="stat-card" style={{ position: 'relative', width: 'auto', top: 'auto', left: 'auto', right: 'auto', transform: 'none' }}>
             <span>Filtered Vault</span>
             <strong style={{ fontSize: '1.25rem' }}>{filteredSubmissions.length}</strong>
           </div>
-          <div className="hero-note" style={{ gridColumn: '1 / -1' }}>
+          <div className="hero-note" style={{
+            position: 'relative',
+            bottom: 'auto',
+            left: 'auto',
+            right: 'auto',
+            width: 'auto',
+            gridColumn: '1 / -1',
+            transform: 'none',
+            marginTop: '16px'
+          }}>
             <p className="section-label" style={{ margin: '0 0 6px 0' }}>Availability & Access Control</p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', fontSize: '0.8rem', color: 'var(--muted)' }}>
               <span>📅 <strong>Scheduled Open:</strong> {formConfig?.config?.openAt ? new Date(formConfig.config.openAt).toLocaleString() : 'Manual'}</span>

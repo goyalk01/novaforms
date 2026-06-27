@@ -1123,7 +1123,7 @@ function BuilderComponent() {
               onClick={() => moveQuestion(index, 'up')}
               title="Move Up"
             >
-              Γû▓
+              ▲
             </button>
             <button
               type="button"
@@ -1276,7 +1276,7 @@ function BuilderComponent() {
                   onChange={(event) => updateOption(question.id, index, event.target.value)}
                 />
                 <button type="button" className="icon-button" onClick={() => removeOption(question.id, index)}>
-                  ΓêÆ
+                  -
                 </button>
               </div>
             ))}
@@ -1375,9 +1375,9 @@ function BuilderComponent() {
             onChange={(e) => updateQuestion(question.id, (q) => ({ ...q, emojiType: e.target.value as any }))}
             style={{ fontSize: '0.8rem', padding: '6px' }}
           >
-            <option value="stars">Stars Γ¡É</option>
-            <option value="emojis">Emojis ≡ƒÿä</option>
-            <option value="hearts">Hearts Γ¥ñ∩╕Å</option>
+            <option value="stars">Stars ⭐</option>
+            <option value="emojis">Emojis 😄</option>
+            <option value="hearts">Hearts ❤️</option>
           </select>
         </label>
       ) : null}
@@ -1421,7 +1421,7 @@ function BuilderComponent() {
                     updateQuestion(question.id, (q) => ({ ...q, rankingItems: next }));
                   }}
                 >
-                  ΓêÆ
+                  -
                 </button>
               </div>
             ))}
@@ -1469,7 +1469,7 @@ function BuilderComponent() {
                       updateQuestion(question.id, (q) => ({ ...q, matrixRows: next }));
                     }}
                   >
-                    ΓêÆ
+                    -
                   </button>
                 </div>
               ))}
@@ -1513,7 +1513,7 @@ function BuilderComponent() {
                       updateQuestion(question.id, (q) => ({ ...q, matrixCols: next }));
                     }}
                   >
-                    ΓêÆ
+                    -
                   </button>
                 </div>
               ))}
@@ -1757,7 +1757,7 @@ function BuilderComponent() {
         case 'pdf':
           return (
             <div style={{ marginTop: '8px', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: '8px' }}>
-              <span style={{ fontSize: '1.3rem' }}>≡ƒôä</span>
+              <span style={{ fontSize: '1.3rem' }}>📄</span>
               <div style={{ display: 'flex', flexDirection: 'column' }}>
                 <span style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>PDF Document</span>
                 <a href={q.mediaUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', fontSize: '0.75rem', textDecoration: 'underline' }}>
@@ -1930,7 +1930,7 @@ function BuilderComponent() {
                   className={star <= ratingVal ? 'star-btn active' : 'star-btn'}
                   onClick={() => setAnswer(question.id, String(star))}
                 >
-                  Γÿà
+                  ⭐
                 </button>
               ))}
             </div>
@@ -2002,10 +2002,10 @@ function BuilderComponent() {
         case 'emoji-rating':
           const eVal = Number(value || '3');
           const icons = question.emojiType === 'hearts' 
-            ? ['Γ¥ñ∩╕Å', 'Γ¥ñ∩╕Å', 'Γ¥ñ∩╕Å', 'Γ¥ñ∩╕Å', 'Γ¥ñ∩╕Å']
+            ? ['❤️', '❤️', '❤️', '❤️', '❤️']
             : question.emojiType === 'emojis'
-              ? ['≡ƒÿá', '≡ƒÖü', '≡ƒÿÉ', '≡ƒÖé', '≡ƒÿä']
-              : ['Γÿà', 'Γÿà', 'Γÿà', 'Γÿà', 'Γÿà'];
+              ? ['😡', '🙁', '😐', '🙂', '😄']
+              : ['⭐', '⭐', '⭐', '⭐', '⭐'];
           return (
             <div style={{ display: 'flex', gap: '12px', marginTop: '8px', fontSize: '1.6rem' }}>
               {icons.map((icon, idx) => (
@@ -2105,7 +2105,7 @@ function BuilderComponent() {
                         setAnswer(question.id, JSON.stringify(next));
                       }}
                     >
-                      Γû▓
+                      ▲
                     </button>
                     <button
                       type="button"
@@ -2277,7 +2277,7 @@ function BuilderComponent() {
                 }}
                 onClick={() => alert("File Upload: Mock selection in live preview.")}
               >
-                <span style={{ fontSize: '1.3rem', display: 'block', marginBottom: '4px' }}>≡ƒôñ</span>
+                <span style={{ fontSize: '1.3rem', display: 'block', marginBottom: '4px' }}>📤</span>
                 <strong style={{ fontSize: '0.8rem' }}>Upload files</strong>
                 <p style={{ fontSize: '0.7rem', color: 'var(--muted)', margin: '2px 0 0' }}>
                   Limit: {question.maxFileSize || 10} MB. Supported: {question.allowedFileTypes?.join(', ') || 'Any'}
@@ -3817,7 +3817,7 @@ function BuilderComponent() {
                         </>
                       ) : (
                         <>
-                          <span>Γ£ª</span>
+                          <span>📷</span>
                           <span>Upload Banner</span>
                         </>
                       )}
@@ -4045,7 +4045,7 @@ function BuilderComponent() {
         <div className="modal-overlay">
           <div className="modal-container">
             <div className="modal-header">
-              <div className="modal-icon">Γ£ª</div>
+              <div className="modal-icon">✓</div>
               <h3>Form Published!</h3>
             </div>
             <p className="modal-desc">
