@@ -23,6 +23,53 @@ const AuthContext = createContext<AuthContextType | null>(null);
 const clerkPublishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const originalFetch = window.fetch;
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+
+      window.fetch = async function (input, init) {
+        try {
+          return await originalFetch(input, init);
+        } catch (error) {
+          if (apiBaseUrl && apiBaseUrl !== 'http://localhost:8080') {
+            let urlString = '';
+            if (typeof input === 'string') {
+              urlString = input;
+            } else if (input instanceof URL) {
+              urlString = input.toString();
+            } else if (input && typeof input === 'object' && 'url' in input) {
+              urlString = (input as any).url;
+            }
+
+            if (urlString && urlString.startsWith(apiBaseUrl)) {
+              const fallbackUrl = urlString.replace(apiBaseUrl, 'http://localhost:8080');
+              console.warn(`API call to production failed (${apiBaseUrl}). Retrying on localhost fallback...`);
+              
+              if (typeof input === 'string') {
+                return originalFetch(fallbackUrl, init);
+              } else if (input instanceof URL) {
+                return originalFetch(new URL(fallbackUrl), init);
+              } else if (input && typeof input === 'object' && 'url' in input) {
+                try {
+                  const newRequest = new Request(fallbackUrl, input as Request);
+                  return originalFetch(newRequest, init);
+                } catch (e) {
+                  return originalFetch(fallbackUrl, init);
+                }
+              }
+            }
+          }
+          throw error;
+        }
+      };
+
+      return () => {
+        window.fetch = originalFetch;
+      };
+    }
+  }, []);
+
   if (clerkPublishableKey) {
     return (
       <ClerkProvider publishableKey={clerkPublishableKey}>
